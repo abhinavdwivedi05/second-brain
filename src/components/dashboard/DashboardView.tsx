@@ -278,7 +278,7 @@ export const DashboardView: React.FC = () => {
                       </Badge>
                     ))}
                   </div>
-                  <span className="text-[11px] text-zinc-400">
+                  <span className="text-[11px] text-zinc-400" suppressHydrationWarning>
                     {new Date(item.createdAt).toLocaleDateString(undefined, {
                       month: 'short',
                       day: 'numeric',
@@ -340,7 +340,7 @@ export const DashboardView: React.FC = () => {
                   <p className="text-zinc-700 dark:text-zinc-300 font-medium">
                     <span className="font-semibold text-zinc-900 dark:text-zinc-100">{act.action}</span> "{act.knowledgeTitle}"
                   </p>
-                  <p className="text-[10px] text-zinc-400">
+                  <p className="text-[10px] text-zinc-400" suppressHydrationWarning>
                     {new Date(act.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </p>
                 </div>

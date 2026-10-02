@@ -5,3 +5,4 @@ from app.models.tag import Tag
 from app.models.collection import Collection
 from app.models.processing_job import ProcessingJob
 from app.models.activity import Activity
+from app.models.file import File

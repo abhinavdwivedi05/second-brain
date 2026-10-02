@@ -41,4 +41,3 @@ class LocalStorageProvider:
             os.remove(self.get_path(stored_filename))
         except FileNotFoundError:
             pass
-}

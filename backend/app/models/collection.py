@@ -24,7 +24,7 @@ class Collection(Base):
     description: Mapped[str] = mapped_column(Text, nullable=True, default="")
     icon: Mapped[str] = mapped_column(String(50), nullable=False, default="Folder")
     color: Mapped[str] = mapped_column(String(30), nullable=False, default="#3B82F6")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), defaultutc_now if False else utc_now, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
 
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="collections")

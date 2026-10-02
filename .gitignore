@@ -81,6 +81,7 @@ yarn-error.log*
 next-env.d.ts
 
 # Python/fastapi ignore rules
+/backend/venv/
 /venv/
 **/__pycache__/
 *.py[cod]

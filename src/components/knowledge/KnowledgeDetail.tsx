@@ -129,7 +129,7 @@ export const KnowledgeDetail: React.FC = () => {
             </Badge>
           )}
 
-          <span className="text-xs text-zinc-400 font-medium">
+          <span className="text-xs text-zinc-400 font-medium" suppressHydrationWarning>
             Added {new Date(activeItem.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
           </span>
         </div>

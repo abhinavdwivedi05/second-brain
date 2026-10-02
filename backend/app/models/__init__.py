@@ -5,6 +5,7 @@ from .tag import Tag
 from .collection import Collection
 from .processing_job import ProcessingJob
 from .activity import Activity
+from .file import File
 
 __all__ = [
     "Base",
@@ -15,4 +16,6 @@ __all__ = [
     "Collection",
     "ProcessingJob",
     "Activity",
+    "File",
 ]
+

@@ -10,8 +10,10 @@ from alembic import context
 config = context.config
 
 # Ensure backend package is on sys.path
-import sys, os
-sys.path.append(os.path.abspath('.'))
+import sys
+import os
+
+sys.path.insert(0, os.path.abspath("backend"))
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -22,8 +24,7 @@ if config.config_file_name is not None:
 # for 'autogenerate' support
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
-from backend.app.models import *
-from backend.app.database.session import Base
+from app.database.base import Base
 
 target_metadata = Base.metadata
 
@@ -45,8 +46,10 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    from backend.app.core.config import settings
+    from app.core.config import settings
     url = settings.DATABASE_URL_SYNC
+    if url.startswith("postgresql://"):
+        url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -65,9 +68,12 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
-    from backend.app.core.config import settings
+    from app.core.config import settings
+    url = settings.DATABASE_URL_SYNC
+    if url.startswith("postgresql://"):
+        url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
     connectable = engine_from_config(
-        {"sqlalchemy.url": settings.DATABASE_URL_SYNC},
+        {"sqlalchemy.url": url},
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )

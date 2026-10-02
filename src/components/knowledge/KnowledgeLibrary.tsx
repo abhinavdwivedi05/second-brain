@@ -284,7 +284,7 @@ const KnowledgeCardGrid: React.FC<{ item: KnowledgeItem }> = ({ item }) => {
             </Badge>
           ))}
         </div>
-        <span className="text-[11px] font-medium text-zinc-400">
+        <span className="text-[11px] font-medium text-zinc-400" suppressHydrationWarning>
           {new Date(item.createdAt).toLocaleDateString(undefined, {
             month: 'short',
             day: 'numeric',
@@ -335,7 +335,7 @@ const KnowledgeCardList: React.FC<{ item: KnowledgeItem }> = ({ item }) => {
           ))}
         </div>
 
-        <span className="text-xs text-zinc-400 font-medium">
+        <span className="text-xs text-zinc-400 font-medium" suppressHydrationWarning>
           {new Date(item.createdAt).toLocaleDateString(undefined, {
             month: 'short',
             day: 'numeric',
@@ -379,7 +379,7 @@ const KnowledgeCardCompact: React.FC<{ item: KnowledgeItem }> = ({ item }) => {
 
       <div className="flex items-center gap-4 text-zinc-400 shrink-0">
         <span className="hidden sm:inline text-[11px] font-mono">#{item.tags[0] || 'general'}</span>
-        <span>
+        <span suppressHydrationWarning>
           {new Date(item.createdAt).toLocaleDateString(undefined, {
             month: 'short',
             day: 'numeric',
