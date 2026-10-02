@@ -1,0 +1,94 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --background: #fafafa;
+    --surface: #ffffff;
+    --surface-hover: #f4f4f5;
+    --surface-active: #e4e4e7;
+    --border: #e4e4e7;
+    --border-subtle: #f4f4f5;
+    --foreground: #09090b;
+    --muted: #71717a;
+    --muted-foreground: #52525b;
+    --accent: #4f46e5;
+    --accent-hover: #4338ca;
+    --accent-light: #e0e7ff;
+    --accent-glow: rgba(79, 70, 229, 0.15);
+    --card: #ffffff;
+    --card-hover: #fafafa;
+    --ring: rgba(79, 70, 229, 0.4);
+  }
+
+  .dark {
+    --background: #09090b;
+    --surface: #121215;
+    --surface-hover: #1c1c21;
+    --surface-active: #27272a;
+    --border: #27272a;
+    --border-subtle: #18181b;
+    --foreground: #f4f4f5;
+    --muted: #a1a1aa;
+    --muted-foreground: #d4d4d8;
+    --accent: #6366f1;
+    --accent-hover: #818cf8;
+    --accent-light: rgba(99, 102, 241, 0.15);
+    --accent-glow: rgba(99, 102, 241, 0.25);
+    --card: #121215;
+    --card-hover: #18181b;
+    --ring: rgba(99, 102, 241, 0.4);
+  }
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Custom subtle scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
+/* Code block highlight syntax */
+pre code {
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulseGlow {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-pulse-glow {
+  animation: pulseGlow 2s infinite ease-in-out;
+}
