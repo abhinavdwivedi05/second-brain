@@ -1,13 +1,15 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useContext } from 'react';
 import { useKnowledge } from '@/context/KnowledgeContext';
-import { Settings as SettingsIcon, User, HardDrive, Key, Database, Download, Check, RefreshCw } from 'lucide-react';
+import { AuthContext } from '@/context/AuthContext';
+import { Settings as SettingsIcon, User, HardDrive, Key, Database, Download, Check, RefreshCw, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 
 export const SettingsView: React.FC = () => {
   const { user, knowledgeItems } = useKnowledge();
+  const auth = useContext(AuthContext);
   const [fastApiEndpoint, setFastApiEndpoint] = useState('http://localhost:8000/api/v1');
   const [isSaved, setIsSaved] = useState(false);
 
@@ -46,16 +48,29 @@ export const SettingsView: React.FC = () => {
             <User size={16} className="text-indigo-500" /> User Profile
           </div>
 
-          <div className="flex items-center gap-4">
-            <img
-              src={user.avatarUrl}
-              alt={user.name}
-              className="w-14 h-14 rounded-full object-cover ring-2 ring-indigo-500/30"
-            />
-            <div>
-              <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100">{user.name}</h2>
-              <p className="text-xs text-zinc-500">{user.email} • {user.role}</p>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <img
+                src={user.avatarUrl}
+                alt={user.name}
+                className="w-14 h-14 rounded-full object-cover ring-2 ring-indigo-500/30"
+              />
+              <div>
+                <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100">{user.name}</h2>
+                <p className="text-xs text-zinc-500">{user.email} • {user.role}</p>
+              </div>
             </div>
+            {auth?.isAuthenticated && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => auth.logout()}
+                className="text-xs text-red-600 dark:text-red-400 border-red-500/20 hover:bg-red-500/10 self-start sm:self-auto"
+                leftIcon={<LogOut size={14} />}
+              >
+                Sign Out
+              </Button>
+            )}
           </div>
         </div>
 

@@ -14,6 +14,7 @@ import { KnowledgeService } from '@/services/api/knowledge';
 import { CollectionService } from '@/services/api/collections';
 import { TagService } from '@/services/api/tags';
 import { INITIAL_USER, INITIAL_ACTIVITIES } from '@/services/api/mockData';
+import { AuthContext } from '@/context/AuthContext';
 
 export type ActiveView =
   | 'dashboard'
@@ -93,7 +94,8 @@ export function KnowledgeProvider({ children }: { children: React.ReactNode }) {
   const [knowledgeItems, setKnowledgeItems] = useState<KnowledgeItem[]>([]);
   const [collections, setCollections] = useState<Collection[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
-  const [user] = useState<UserProfile>(INITIAL_USER);
+  const authContext = useContext(AuthContext);
+  const user = authContext?.user || INITIAL_USER;
   const [activities, setActivities] = useState<ActivityLog[]>(INITIAL_ACTIVITIES);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 

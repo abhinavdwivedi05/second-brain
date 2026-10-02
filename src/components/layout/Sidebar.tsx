@@ -1,8 +1,9 @@
 'use client';
 
-import React from 'react';
+import React, { useContext } from 'react';
 import { useKnowledge, ActiveView } from '@/context/KnowledgeContext';
 import { useTheme } from '@/context/ThemeContext';
+import { AuthContext } from '@/context/AuthContext';
 import { KnowledgeType } from '@/types';
 import {
   Brain,
@@ -26,6 +27,7 @@ import {
   Moon,
   Compass,
   HardDrive,
+  LogOut,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 
@@ -46,6 +48,7 @@ export const Sidebar: React.FC = () => {
   } = useKnowledge();
 
   const { theme, toggleTheme } = useTheme();
+  const auth = useContext(AuthContext);
 
   // Helper counts
   const totalCount = knowledgeItems.length;
@@ -383,6 +386,15 @@ export const Sidebar: React.FC = () => {
             >
               {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
             </button>
+            {auth?.isAuthenticated && (
+              <button
+                onClick={() => auth.logout()}
+                className="p-1.5 rounded-md text-zinc-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                title="Sign Out"
+              >
+                <LogOut size={15} />
+              </button>
+            )}
           </div>
         </div>
       </div>
