@@ -1,54 +1,78 @@
 import { Tag } from '@/types';
-import { INITIAL_TAGS } from './mockData';
+import { apiClient, ApiClientError } from './client';
 
-const TAGS_KEY = 'second_brain_tags_v1';
+export interface CreateTagDto {
+  name: string;
+  color?: string;
+}
 
+export interface UpdateTagDto {
+  name?: string;
+  color?: string;
+}
+
+export async function listTags(): Promise<Tag[]> {
+  return apiClient.get<Tag[]>('/api/v1/tags');
+}
+
+export async function createTag(data: CreateTagDto): Promise<Tag> {
+  return apiClient.post<Tag>('/api/v1/tags', data);
+}
+
+export async function getTag(id: string): Promise<Tag> {
+  return apiClient.get<Tag>(`/api/v1/tags/${encodeURIComponent(id)}`);
+}
+
+export async function updateTag(id: string, data: UpdateTagDto): Promise<Tag> {
+  return apiClient.patch<Tag>(`/api/v1/tags/${encodeURIComponent(id)}`, data);
+}
+
+export async function deleteTag(id: string): Promise<void> {
+  await apiClient.delete<void>(`/api/v1/tags/${encodeURIComponent(id)}`);
+}
+
+// Backwards-compatible service adapter for existing code
 export class TagService {
-  private static getStored(): Tag[] {
-    if (typeof window === 'undefined') return INITIAL_TAGS;
-    try {
-      const stored = localStorage.getItem(TAGS_KEY);
-      if (!stored) {
-        localStorage.setItem(TAGS_KEY, JSON.stringify(INITIAL_TAGS));
-        return INITIAL_TAGS;
-      }
-      return JSON.parse(stored);
-    } catch {
-      return INITIAL_TAGS;
-    }
-  }
-
-  private static saveStored(items: Tag[]): void {
-    if (typeof window === 'undefined') return;
-    try {
-      localStorage.setItem(TAGS_KEY, JSON.stringify(items));
-    } catch (e) {
-      console.error('Failed to save tags', e);
-    }
-  }
-
   static async getAll(): Promise<Tag[]> {
-    return this.getStored();
+    return listTags();
   }
 
-  static async ensureTagExists(name: string): Promise<Tag> {
-    const clean = name.replace(/^#/, '').trim().toLowerCase();
-    const list = this.getStored();
-    const existing = list.find((t) => t.name.toLowerCase() === clean);
-    if (existing) return existing;
+  static async create(data: CreateTagDto): Promise<Tag> {
+    return createTag(data);
+  }
 
-    const colors = ['#3B82F6', '#10B981', '#8B5CF6', '#F59E0B', '#EC4899', '#EF4444', '#06B6D4'];
-    const randomColor = colors[Math.floor(Math.random() * colors.length)];
+  static async getById(id: string): Promise<Tag> {
+    return getTag(id);
+  }
 
-    const created: Tag = {
-      id: `tag-${Date.now()}`,
-      name: clean,
-      color: randomColor,
-      itemCount: 1,
-    };
+  static async update(id: string, data: UpdateTagDto): Promise<Tag> {
+    return updateTag(id, data);
+  }
 
-    const updated = [...list, created];
-    this.saveStored(updated);
-    return created;
+  static async delete(id: string): Promise<boolean> {
+    await deleteTag(id);
+    return true;
+  }
+
+  static async ensureTagExists(name: string): Promise<Tag | null> {
+    const clean = name.replace(/^#/, '').trim();
+    if (!clean) return null;
+
+    try {
+      return await createTag({ name: clean });
+    } catch (err: any) {
+      if (err instanceof ApiClientError && err.status === 409) {
+        try {
+          const tags = await listTags();
+          return tags.find((t) => t.name.toLowerCase() === clean.toLowerCase()) || null;
+        } catch {
+          return null;
+        }
+      }
+      if (err instanceof ApiClientError && err.status === 401) {
+        return null;
+      }
+      throw err;
+    }
   }
 }

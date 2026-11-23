@@ -1,5 +1,6 @@
 from datetime import datetime
-from pydantic import BaseModel, Field
+from typing import Optional
+from pydantic import BaseModel, Field, ConfigDict
 
 class FileResponse(BaseModel):
     id: str = Field(..., description="File UUID")
@@ -9,5 +10,4 @@ class FileResponse(BaseModel):
     created_at: datetime = Field(..., description="Timestamp of upload")
     download_url: str = Field(..., description="Endpoint to download the file")
 
-    class Config:
-        orm_mode = True
+    model_config = ConfigDict(from_attributes=True)

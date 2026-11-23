@@ -10,11 +10,34 @@ import {
   KnowledgeType,
   SearchFilterOptions,
 } from '@/types';
-import { KnowledgeService } from '@/services/api/knowledge';
-import { CollectionService } from '@/services/api/collections';
-import { TagService } from '@/services/api/tags';
+import {
+  KnowledgeService,
+  listKnowledge,
+  createKnowledgeItem,
+  updateKnowledgeItem,
+  deleteKnowledgeItem,
+  toggleKnowledgeFavorite,
+} from '@/services/api/knowledge';
+import {
+  listCollections,
+  createCollection as apiCreateCollection,
+  updateCollection as apiUpdateCollection,
+  deleteCollection as apiDeleteCollection,
+} from '@/services/api/collections';
+import {
+  listTags,
+  createTag as apiCreateTag,
+  updateTag as apiUpdateTag,
+  deleteTag as apiDeleteTag,
+} from '@/services/api/tags';
+import {
+  migrateCollectionsIfNeeded,
+  migrateTagsIfNeeded,
+  migrateKnowledgeIfNeeded,
+} from '@/services/api/dataMigration';
 import { INITIAL_USER, INITIAL_ACTIVITIES } from '@/services/api/mockData';
 import { AuthContext } from '@/context/AuthContext';
+import { ApiClientError } from '@/services/api/client';
 
 export type ActiveView =
   | 'dashboard'
@@ -50,6 +73,14 @@ interface KnowledgeContextType {
   activities: ActivityLog[];
   isLoading: boolean;
 
+  // Error States
+  knowledgeError: string | null;
+  collectionsError: string | null;
+  tagsError: string | null;
+  clearKnowledgeError: () => void;
+  clearCollectionsError: () => void;
+  clearTagsError: () => void;
+
   // Modals & Drawers
   isAddModalOpen: boolean;
   setIsAddModalOpen: (open: boolean) => void;
@@ -62,11 +93,16 @@ interface KnowledgeContextType {
 
   // Actions
   toggleFavorite: (id: string) => Promise<void>;
-  createKnowledge: (data: Omit<KnowledgeItem, 'id' | 'createdAt' | 'updatedAt'>) => Promise<KnowledgeItem>;
-  updateKnowledge: (id: string, updates: Partial<KnowledgeItem>) => Promise<void>;
+  toggleArchive: (id: string) => Promise<void>;
+  createKnowledge: (data: Partial<KnowledgeItem> & { title: string }) => Promise<KnowledgeItem>;
+  updateKnowledge: (id: string, updates: Partial<KnowledgeItem>) => Promise<KnowledgeItem | null>;
   deleteKnowledge: (id: string) => Promise<void>;
-  createCollection: (data: Omit<Collection, 'id' | 'createdAt' | 'itemCount'>) => Promise<void>;
+  createCollection: (data: Omit<Collection, 'id' | 'createdAt' | 'itemCount'>) => Promise<Collection>;
+  updateCollection: (id: string, data: Partial<Omit<Collection, 'id' | 'createdAt' | 'itemCount'>>) => Promise<Collection>;
   deleteCollection: (id: string) => Promise<void>;
+  createTag: (data: { name: string; color?: string }) => Promise<Tag>;
+  updateTag: (id: string, data: { name?: string; color?: string }) => Promise<Tag>;
+  deleteTag: (id: string) => Promise<void>;
   refreshAllData: () => Promise<void>;
   
   // Helpers
@@ -96,8 +132,12 @@ export function KnowledgeProvider({ children }: { children: React.ReactNode }) {
   const [tags, setTags] = useState<Tag[]>([]);
   const authContext = useContext(AuthContext);
   const user = authContext?.user || INITIAL_USER;
+  const isAuthenticated = authContext?.isAuthenticated ?? false;
   const [activities, setActivities] = useState<ActivityLog[]>(INITIAL_ACTIVITIES);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [knowledgeError, setKnowledgeError] = useState<string | null>(null);
+  const [collectionsError, setCollectionsError] = useState<string | null>(null);
+  const [tagsError, setTagsError] = useState<string | null>(null);
 
   // Modals
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
@@ -108,22 +148,53 @@ export function KnowledgeProvider({ children }: { children: React.ReactNode }) {
   const refreshAllData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [items, cols, tgs] = await Promise.all([
-        KnowledgeService.getAll(filterOptions),
-        CollectionService.getAll(),
-        TagService.getAll(),
-      ]);
-      setKnowledgeItems(items);
-      setCollections(cols);
-      setTags(tgs);
-    } catch (err) {
+      if (isAuthenticated) {
+        try {
+          const [fetchedKnowledge, fetchedCols, fetchedTags] = await Promise.all([
+            listKnowledge(filterOptions),
+            listCollections(),
+            listTags(),
+          ]);
+
+          // Safe one-time legacy migration if needed
+          const cols = await migrateCollectionsIfNeeded(fetchedCols);
+          const tgs = await migrateTagsIfNeeded(fetchedTags);
+          const items = await migrateKnowledgeIfNeeded(fetchedKnowledge, cols);
+
+          setKnowledgeItems(items);
+          setCollections(cols);
+          setTags(tgs);
+          setKnowledgeError(null);
+          setCollectionsError(null);
+          setTagsError(null);
+        } catch (apiErr: unknown) {
+          console.error('Failed to load data from API:', apiErr);
+          if (apiErr instanceof ApiClientError && apiErr.status === 401) {
+            setKnowledgeItems([]);
+            setCollections([]);
+            setTags([]);
+          } else {
+            const errorMsg = (apiErr as Error)?.message || 'Failed to load knowledge records from server';
+            setKnowledgeError(errorMsg);
+            setCollectionsError(errorMsg);
+            setTagsError(errorMsg);
+          }
+        }
+      } else {
+        setKnowledgeItems([]);
+        setCollections([]);
+        setTags([]);
+      }
+    } catch (err: unknown) {
       console.error('Failed to load knowledge data:', err);
+      setKnowledgeError((err as Error)?.message || 'Error synchronizing data');
     } finally {
       setIsLoading(false);
     }
-  }, [filterOptions]);
+  }, [filterOptions, isAuthenticated]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     refreshAllData();
   }, [refreshAllData]);
 
@@ -146,68 +217,240 @@ export function KnowledgeProvider({ children }: { children: React.ReactNode }) {
   };
 
   const toggleFavorite = async (id: string) => {
-    const updated = await KnowledgeService.toggleFavorite(id);
-    if (updated) {
+    try {
+      const updated = await toggleKnowledgeFavorite(id);
+      if (updated) {
+        setKnowledgeItems((prev) => prev.map((k) => (k.id === id ? updated : k)));
+        if (activeItem && activeItem.id === id) {
+          setActiveItem(updated);
+        }
+      }
+    } catch (err: unknown) {
+      console.error('Failed to toggle favorite:', err);
+      setKnowledgeError((err as Error)?.message || 'Failed to toggle favorite');
+    }
+  };
+
+  const toggleArchive = async (id: string) => {
+    const target = knowledgeItems.find((k) => k.id === id) || (activeItem?.id === id ? activeItem : null);
+    if (!target) return;
+    try {
+      const updated = await updateKnowledgeItem(id, { isArchived: !target.isArchived });
+      setKnowledgeItems((prev) => prev.map((k) => (k.id === id ? updated : k)));
       if (activeItem && activeItem.id === id) {
         setActiveItem(updated);
       }
-      refreshAllData();
+    } catch (err: unknown) {
+      console.error('Failed to toggle archive:', err);
+      setKnowledgeError((err as Error)?.message || 'Failed to toggle archive');
     }
   };
 
   const createKnowledge = async (
-    data: Omit<KnowledgeItem, 'id' | 'createdAt' | 'updatedAt'>
+    data: Partial<KnowledgeItem> & { title: string }
   ): Promise<KnowledgeItem> => {
-    const created = await KnowledgeService.create(data);
+    setKnowledgeError(null);
+    try {
+      const created = await createKnowledgeItem(data);
 
-    // Ensure tags exist in system
-    for (const tagName of created.tags) {
-      await TagService.ensureTagExists(tagName);
+      // Re-fetch tags and collections to refresh accurate item counts
+      if (isAuthenticated) {
+        Promise.all([listCollections(), listTags()])
+          .then(([cols, tgs]) => {
+            setCollections(cols);
+            setTags(tgs);
+          })
+          .catch(() => {});
+      }
+
+      // Add activity log
+      const newActivity: ActivityLog = {
+        id: `act-${Date.now()}`,
+        action: 'CREATED',
+        knowledgeId: created.id,
+        knowledgeTitle: created.title,
+        timestamp: new Date().toISOString(),
+        type: created.type,
+      };
+      setActivities((prev) => [newActivity, ...prev]);
+
+      // Optimistically prepend created item
+      setKnowledgeItems((prev) => [created, ...prev.filter((k) => k.id !== created.id)]);
+      return created;
+    } catch (err: unknown) {
+      console.error('Failed to create knowledge note:', err);
+      const msg = (err as Error)?.message || 'Failed to create knowledge note';
+      setKnowledgeError(msg);
+      throw err;
     }
-
-    // Add activity log
-    const newActivity: ActivityLog = {
-      id: `act-${Date.now()}`,
-      action: 'CREATED',
-      knowledgeId: created.id,
-      knowledgeTitle: created.title,
-      timestamp: new Date().toISOString(),
-      type: created.type,
-    };
-    setActivities((prev) => [newActivity, ...prev]);
-
-    await refreshAllData();
-    return created;
   };
 
-  const updateKnowledge = async (id: string, updates: Partial<KnowledgeItem>) => {
-    const updated = await KnowledgeService.update(id, updates);
-    if (updated && activeItem?.id === id) {
-      setActiveItem(updated);
+  const updateKnowledge = async (id: string, updates: Partial<KnowledgeItem>): Promise<KnowledgeItem | null> => {
+    setKnowledgeError(null);
+    try {
+      const updated = await updateKnowledgeItem(id, updates);
+      setKnowledgeItems((prev) => prev.map((k) => (k.id === id ? updated : k)));
+      if (activeItem && activeItem.id === id) {
+        setActiveItem(updated);
+      }
+
+      // Refresh collections/tags counts if collectionId or tags changed
+      if (updates.collectionId !== undefined || updates.tags !== undefined) {
+        Promise.all([listCollections(), listTags()])
+          .then(([cols, tgs]) => {
+            setCollections(cols);
+            setTags(tgs);
+          })
+          .catch(() => {});
+      }
+
+      return updated;
+    } catch (err: unknown) {
+      console.error('Failed to update knowledge note:', err);
+      const msg = (err as Error)?.message || 'Failed to update knowledge note';
+      setKnowledgeError(msg);
+      throw err;
     }
-    await refreshAllData();
   };
 
-  const deleteKnowledge = async (id: string) => {
-    await KnowledgeService.delete(id);
-    if (activeItem?.id === id) {
-      setActiveItem(null);
-      setActiveView('library');
+  const deleteKnowledge = async (id: string): Promise<void> => {
+    setKnowledgeError(null);
+    try {
+      await deleteKnowledgeItem(id);
+      setKnowledgeItems((prev) => prev.filter((k) => k.id !== id));
+      if (activeItem?.id === id) {
+        setActiveItem(null);
+        setActiveView('library');
+      }
+
+      // Refresh collections and tags to reflect decremented item counts
+      if (isAuthenticated) {
+        Promise.all([listCollections(), listTags()])
+          .then(([cols, tgs]) => {
+            setCollections(cols);
+            setTags(tgs);
+          })
+          .catch(() => {});
+      }
+    } catch (err: unknown) {
+      console.error('Failed to delete knowledge note:', err);
+      const msg = (err as Error)?.message || 'Failed to delete knowledge note';
+      setKnowledgeError(msg);
+      throw err;
     }
-    await refreshAllData();
   };
 
   const createCollection = async (
     data: Omit<Collection, 'id' | 'createdAt' | 'itemCount'>
-  ) => {
-    await CollectionService.create(data);
-    await refreshAllData();
+  ): Promise<Collection> => {
+    try {
+      setCollectionsError(null);
+      const created = await apiCreateCollection({
+        name: data.name,
+        description: data.description,
+        icon: data.icon,
+        color: data.color,
+      });
+      setCollections((prev) => [created, ...prev]);
+      return created;
+    } catch (err: unknown) {
+      console.error('Failed to create collection:', err);
+      const msg = (err as Error)?.message || 'Failed to create collection';
+      setCollectionsError(msg);
+      throw err;
+    }
   };
 
-  const deleteCollection = async (id: string) => {
-    await CollectionService.delete(id);
-    await refreshAllData();
+  const updateCollection = async (
+    id: string,
+    data: Partial<Omit<Collection, 'id' | 'createdAt' | 'itemCount'>>
+  ): Promise<Collection> => {
+    try {
+      setCollectionsError(null);
+      const updated = await apiUpdateCollection(id, data);
+      setCollections((prev) => prev.map((c) => (c.id === id ? updated : c)));
+      return updated;
+    } catch (err: unknown) {
+      console.error('Failed to update collection:', err);
+      const msg = (err as Error)?.message || 'Failed to update collection';
+      setCollectionsError(msg);
+      throw err;
+    }
   };
+
+  const deleteCollection = async (id: string): Promise<void> => {
+    try {
+      setCollectionsError(null);
+      await apiDeleteCollection(id);
+      setCollections((prev) => prev.filter((c) => c.id !== id));
+      if (filterOptions.collectionId === id) {
+        setFilterOptions((prev) => ({ ...prev, collectionId: undefined }));
+      }
+      // Update in-memory knowledge items that belonged to this collection
+      setKnowledgeItems((prev) =>
+        prev.map((item) =>
+          item.collectionId === id ? { ...item, collectionId: undefined, collection: undefined } : item
+        )
+      );
+    } catch (err: unknown) {
+      console.error('Failed to delete collection:', err);
+      const msg = (err as Error)?.message || 'Failed to delete collection';
+      setCollectionsError(msg);
+      throw err;
+    }
+  };
+
+  const createTag = async (data: { name: string; color?: string }): Promise<Tag> => {
+    try {
+      setTagsError(null);
+      const created = await apiCreateTag(data);
+      setTags((prev) => [...prev, created]);
+      return created;
+    } catch (err: unknown) {
+      console.error('Failed to create tag:', err);
+      const msg = (err as Error)?.message || 'Failed to create tag';
+      setTagsError(msg);
+      throw err;
+    }
+  };
+
+  const updateTag = async (id: string, data: { name?: string; color?: string }): Promise<Tag> => {
+    try {
+      setTagsError(null);
+      const updated = await apiUpdateTag(id, data);
+      setTags((prev) => prev.map((t) => (t.id === id ? updated : t)));
+      return updated;
+    } catch (err: unknown) {
+      console.error('Failed to update tag:', err);
+      const msg = (err as Error)?.message || 'Failed to update tag';
+      setTagsError(msg);
+      throw err;
+    }
+  };
+
+  const deleteTag = async (id: string): Promise<void> => {
+    try {
+      setTagsError(null);
+      await apiDeleteTag(id);
+      setTags((prev) => prev.filter((t) => t.id !== id));
+      if (filterOptions.tag) {
+        const deletedTag = tags.find((t) => t.id === id);
+        if (deletedTag && filterOptions.tag === deletedTag.name) {
+          setFilterOptions((prev) => ({ ...prev, tag: undefined }));
+        }
+      }
+      refreshAllData();
+    } catch (err: unknown) {
+      console.error('Failed to delete tag:', err);
+      const msg = (err as Error)?.message || 'Failed to delete tag';
+      setTagsError(msg);
+      throw err;
+    }
+  };
+
+  const clearKnowledgeError = () => setKnowledgeError(null);
+  const clearCollectionsError = () => setCollectionsError(null);
+  const clearTagsError = () => setTagsError(null);
 
   const resetFilters = () => {
     setFilterOptions({
@@ -256,6 +499,12 @@ export function KnowledgeProvider({ children }: { children: React.ReactNode }) {
         user,
         activities,
         isLoading,
+        knowledgeError,
+        collectionsError,
+        tagsError,
+        clearKnowledgeError,
+        clearCollectionsError,
+        clearTagsError,
         isAddModalOpen,
         setIsAddModalOpen,
         isCommandPaletteOpen,
@@ -265,11 +514,16 @@ export function KnowledgeProvider({ children }: { children: React.ReactNode }) {
         isSidebarCollapsed,
         setIsSidebarCollapsed,
         toggleFavorite,
+        toggleArchive,
         createKnowledge,
         updateKnowledge,
         deleteKnowledge,
         createCollection,
+        updateCollection,
         deleteCollection,
+        createTag,
+        updateTag,
+        deleteTag,
         refreshAllData,
         selectTagFilter,
         selectCollectionFilter,

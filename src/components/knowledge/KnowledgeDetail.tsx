@@ -4,7 +4,6 @@ import React, { useState, useEffect } from 'react';
 import { useKnowledge } from '@/context/KnowledgeContext';
 import { KnowledgeItem } from '@/types';
 import { KnowledgeService } from '@/services/api/knowledge';
-import { AIService } from '@/services/api/ai';
 import {
   ArrowLeft,
   Star,
@@ -13,44 +12,66 @@ import {
   Sparkles,
   Tag as TagIcon,
   FolderKanban,
-  FileText,
-  Clock,
-  Share2,
+  Edit3,
+  Archive,
+  ArchiveRestore,
   Copy,
   Check,
   Play,
   Pause,
   Download,
   Brain,
-  Link2,
-  FileCode,
   Layers,
-  ChevronRight,
+  X,
+  AlertCircle,
+  Save,
 } from 'lucide-react';
 import { TypeIcon } from '@/components/ui/TypeIcon';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
 
 export const KnowledgeDetail: React.FC = () => {
   const {
     activeItem,
     setActiveView,
     toggleFavorite,
+    toggleArchive,
     deleteKnowledge,
+    updateKnowledge,
     openDetailView,
     setIsAiDrawerOpen,
+    collections,
   } = useKnowledge();
 
   const [relatedItems, setRelatedItems] = useState<KnowledgeItem[]>([]);
   const [copied, setCopied] = useState(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState(false);
-  const [isSummarizing, setIsSummarizing] = useState(false);
+
+  // Edit Mode States
+  const [isEditing, setIsEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState('');
+  const [editContent, setEditContent] = useState('');
+  const [editSummary, setEditSummary] = useState('');
+  const [editCollectionId, setEditCollectionId] = useState<string>('');
+  const [editTags, setEditTags] = useState<string[]>([]);
+  const [newTagInput, setNewTagInput] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   useEffect(() => {
     if (activeItem) {
       KnowledgeService.getRelatedItems(activeItem).then(setRelatedItems);
     }
   }, [activeItem]);
+
+  // Track active item ID changes to reset editing state safely without cascading effects
+  const [lastItemId, setLastItemId] = useState<string | null>(null);
+  if (activeItem && activeItem.id !== lastItemId) {
+    setLastItemId(activeItem.id);
+    setIsEditing(false);
+    setEditError(null);
+  }
 
   if (!activeItem) {
     return (
@@ -63,6 +84,61 @@ export const KnowledgeDetail: React.FC = () => {
     );
   }
 
+  const handleStartEdit = () => {
+    setEditTitle(activeItem.title);
+    setEditContent(activeItem.content);
+    setEditSummary(activeItem.summary || '');
+    setEditCollectionId(activeItem.collectionId || '');
+    setEditTags([...activeItem.tags]);
+    setEditError(null);
+    setIsEditing(true);
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+    setEditError(null);
+  };
+
+  const handleAddEditTag = () => {
+    const clean = newTagInput.trim().replace(/^#/, '').toLowerCase();
+    if (clean && !editTags.includes(clean)) {
+      setEditTags([...editTags, clean]);
+      setNewTagInput('');
+    }
+  };
+
+  const handleRemoveEditTag = (tagToRemove: string) => {
+    setEditTags(editTags.filter((t) => t !== tagToRemove));
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanTitle = editTitle.trim();
+    if (!cleanTitle) {
+      setEditError('Title cannot be empty');
+      return;
+    }
+
+    setIsSaving(true);
+    setEditError(null);
+
+    try {
+      await updateKnowledge(activeItem.id, {
+        title: cleanTitle,
+        content: editContent,
+        summary: editSummary,
+        collectionId: editCollectionId || '',
+        tags: editTags,
+      });
+      setIsEditing(false);
+    } catch (err: unknown) {
+      console.error('Failed to update knowledge item:', err);
+      setEditError((err as Error)?.message || 'Failed to save updates to the server');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleCopy = () => {
     navigator.clipboard.writeText(activeItem.content);
     setCopied(true);
@@ -71,7 +147,11 @@ export const KnowledgeDetail: React.FC = () => {
 
   const handleDelete = async () => {
     if (confirm(`Are you sure you want to delete "${activeItem.title}"?`)) {
-      await deleteKnowledge(activeItem.id);
+      try {
+        await deleteKnowledge(activeItem.id);
+      } catch (err: unknown) {
+        alert((err as Error)?.message || 'Failed to delete knowledge note');
+      }
     }
   };
 
@@ -87,16 +167,65 @@ export const KnowledgeDetail: React.FC = () => {
         </button>
 
         <div className="flex items-center gap-2">
+          {/* Edit Button Toggle */}
+          {!isEditing ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleStartEdit}
+              leftIcon={<Edit3 size={14} />}
+              className="text-xs"
+            >
+              Edit Note
+            </Button>
+          ) : (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleCancelEdit}
+                disabled={isSaving}
+                className="text-xs"
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleSaveEdit}
+                isLoading={isSaving}
+                leftIcon={<Save size={14} />}
+                className="text-xs"
+              >
+                Save
+              </Button>
+            </div>
+          )}
+
+          {/* Toggle Favorite */}
           <button
             onClick={() => toggleFavorite(activeItem.id)}
             className="p-2 rounded-lg text-zinc-400 hover:text-amber-400 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-            title="Toggle Favorite"
+            title={activeItem.isFavorite ? 'Remove Favorite' : 'Mark as Favorite'}
           >
             <Star
               size={16}
               className={activeItem.isFavorite ? 'fill-amber-400 text-amber-400' : ''}
             />
           </button>
+
+          {/* Toggle Archive */}
+          <button
+            onClick={() => toggleArchive(activeItem.id)}
+            className={`p-2 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors ${
+              activeItem.isArchived ? 'text-indigo-600 dark:text-indigo-400' : 'text-zinc-400 hover:text-zinc-900'
+            }`}
+            title={activeItem.isArchived ? 'Unarchive Note' : 'Archive Note'}
+          >
+            {activeItem.isArchived ? <ArchiveRestore size={16} /> : <Archive size={16} />}
+          </button>
+
+          {/* Copy Content */}
           <button
             onClick={handleCopy}
             className="p-2 rounded-lg text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
@@ -104,77 +233,184 @@ export const KnowledgeDetail: React.FC = () => {
           >
             {copied ? <Check size={16} className="text-emerald-500" /> : <Copy size={16} />}
           </button>
+
+          {/* Delete */}
           <button
             onClick={handleDelete}
             className="p-2 rounded-lg text-zinc-400 hover:text-red-500 border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-            title="Delete Knowledge"
+            title="Delete Knowledge Note"
           >
             <Trash2 size={16} />
           </button>
         </div>
       </div>
 
-      {/* Title Header */}
-      <div className="space-y-3 border-b border-zinc-200 dark:border-zinc-800 pb-6">
-        <div className="flex items-center gap-2.5">
-          <Badge variant="accent" size="md">
-            <TypeIcon type={activeItem.type} size={14} />
-            {activeItem.type}
-          </Badge>
-
-          {activeItem.collectionName && (
-            <Badge variant="secondary" size="md">
-              <FolderKanban size={12} className="mr-1" />
-              {activeItem.collectionName}
-            </Badge>
-          )}
-
-          <span className="text-xs text-zinc-400 font-medium" suppressHydrationWarning>
-            Added {new Date(activeItem.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-          </span>
+      {/* Edit Error Banner */}
+      {editError && (
+        <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 flex items-center justify-between text-xs text-red-700 dark:text-red-300 animate-fade-in">
+          <div className="flex items-center gap-2">
+            <AlertCircle size={16} className="text-red-500 shrink-0" />
+            <span>{editError}</span>
+          </div>
+          <button onClick={() => setEditError(null)}>
+            <X size={14} />
+          </button>
         </div>
+      )}
 
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100 leading-snug">
-          {activeItem.title}
-        </h1>
-
-        <div className="flex flex-wrap items-center gap-1.5 pt-1">
-          {activeItem.tags.map((t) => (
-            <Badge key={t} variant="default" size="sm">
-              #{t}
+      {/* Header View vs Edit */}
+      {!isEditing ? (
+        <div className="space-y-3 border-b border-zinc-200 dark:border-zinc-800 pb-6">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <Badge variant="accent" size="md">
+              <TypeIcon type={activeItem.type} size={14} />
+              {activeItem.type}
             </Badge>
-          ))}
-        </div>
-      </div>
 
-      {/* Main Content Layout (Left Column + Right Sidebar) */}
+            {activeItem.collectionName && (
+              <Badge variant="secondary" size="md">
+                <FolderKanban size={12} className="mr-1" />
+                {activeItem.collectionName}
+              </Badge>
+            )}
+
+            {activeItem.isArchived && (
+              <Badge variant="danger" size="md">
+                <Archive size={12} className="mr-1" /> Archived
+              </Badge>
+            )}
+
+            <span className="text-xs text-zinc-400 font-medium" suppressHydrationWarning>
+              Added {new Date(activeItem.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+            </span>
+          </div>
+
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100 leading-snug">
+            {activeItem.title}
+          </h1>
+
+          <div className="flex flex-wrap items-center gap-1.5 pt-1">
+            {activeItem.tags.map((t) => (
+              <Badge key={t} variant="default" size="sm">
+                #{t}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      ) : (
+        /* Edit Header Form */
+        <div className="p-6 rounded-2xl border border-indigo-200 dark:border-indigo-800/80 bg-indigo-50/20 dark:bg-indigo-950/10 space-y-4 animate-fade-in">
+          <div className="space-y-1">
+            <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
+              Note Title <span className="text-red-500">*</span>
+            </label>
+            <Input
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              placeholder="Enter note title..."
+              className="text-base font-semibold"
+              required
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                <FolderKanban size={13} className="text-zinc-400" /> Collection
+              </label>
+              <select
+                value={editCollectionId}
+                onChange={(e) => setEditCollectionId(e.target.value)}
+                className="w-full bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 text-xs rounded-lg p-2.5 border border-zinc-200 dark:border-zinc-800 focus:outline-none focus:border-indigo-500 cursor-pointer"
+              >
+                <option value="">No Collection (General)</option>
+                {collections.map((col) => (
+                  <option key={col.id} value={col.id}>
+                    {col.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                <TagIcon size={13} className="text-zinc-400" /> Tags
+              </label>
+              <div className="flex items-center gap-2">
+                <Input
+                  value={newTagInput}
+                  onChange={(e) => setNewTagInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddEditTag();
+                    }
+                  }}
+                  placeholder="Add tag and press Enter..."
+                />
+                <Button type="button" variant="secondary" size="sm" onClick={handleAddEditTag}>
+                  Add
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-1.5">
+            {editTags.map((t) => (
+              <Badge
+                key={t}
+                variant="accent"
+                size="sm"
+                className="cursor-pointer hover:bg-red-100 dark:hover:bg-red-950"
+                onClick={() => handleRemoveEditTag(t)}
+              >
+                #{t} <X size={10} className="ml-1" />
+              </Badge>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Main Content Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Left Column: AI Summary + Main Content */}
         <div className="lg:col-span-2 space-y-8">
-          {/* AI Intelligence Box */}
+          {/* AI Intelligence Box / Summary Edit */}
           <div className="p-5 rounded-xl bg-gradient-to-br from-indigo-50/70 via-purple-50/40 to-white dark:from-indigo-950/40 dark:via-purple-950/20 dark:to-[#121215] border border-indigo-200/80 dark:border-indigo-800/50 space-y-4 shadow-xs">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-indigo-700 dark:text-indigo-300 font-bold text-xs uppercase tracking-wider">
                 <Sparkles size={16} className="text-indigo-500" />
-                AI Knowledge Insights & Key Concepts
+                Knowledge Summary
               </div>
 
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setIsAiDrawerOpen(true)}
-                className="text-xs border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-300"
-                leftIcon={<Brain size={13} />}
-              >
-                Ask Assistant
-              </Button>
+              {!isEditing && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsAiDrawerOpen(true)}
+                  className="text-xs border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-300"
+                  leftIcon={<Brain size={13} />}
+                >
+                  Ask Assistant
+                </Button>
+              )}
             </div>
 
-            <p className="text-xs sm:text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed font-medium">
-              {activeItem.summary}
-            </p>
+            {!isEditing ? (
+              <p className="text-xs sm:text-sm text-zinc-700 dark:text-zinc-300 leading-relaxed font-medium">
+                {activeItem.summary || 'No summary recorded for this knowledge note.'}
+              </p>
+            ) : (
+              <textarea
+                value={editSummary}
+                onChange={(e) => setEditSummary(e.target.value)}
+                rows={3}
+                placeholder="Update summary or key takeaways..."
+                className="w-full bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 text-xs rounded-lg p-3 border border-indigo-200 dark:border-indigo-800 focus:outline-none focus:border-indigo-500"
+              />
+            )}
 
-            {activeItem.keyConcepts && activeItem.keyConcepts.length > 0 && (
+            {activeItem.keyConcepts && activeItem.keyConcepts.length > 0 && !isEditing && (
               <div className="pt-3 border-t border-indigo-100 dark:border-indigo-900/40 space-y-2">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
                   Key Concepts Identified:
@@ -194,7 +430,7 @@ export const KnowledgeDetail: React.FC = () => {
             )}
           </div>
 
-          {/* Audio Player Simulator (If Audio Knowledge) */}
+          {/* Audio Player Simulator */}
           {activeItem.type === 'AUDIO' && (
             <div className="p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#121215] flex items-center justify-between gap-4">
               <div className="flex items-center gap-3">
@@ -206,30 +442,53 @@ export const KnowledgeDetail: React.FC = () => {
                 </button>
                 <div>
                   <div className="text-xs font-bold text-zinc-900 dark:text-zinc-100">
-                    Voice Note Audio Playback ({activeItem.audioDuration || '02:45'})
+                    Voice Note Audio Playback ({activeItem.audioDuration || '02:30'})
                   </div>
                   <div className="text-[11px] text-zinc-400">
-                    {isPlayingAudio ? 'Playing simulated audio stream...' : 'Click play to listen to recording'}
+                    {isPlayingAudio ? 'Playing audio recording...' : 'Click play to listen to recording'}
                   </div>
                 </div>
               </div>
               <Button variant="ghost" size="sm" leftIcon={<Download size={14} />}>
-                Download MP3
+                Download Audio
               </Button>
             </div>
           )}
 
-          {/* Original Content Body */}
+          {/* Original Content Body / Markdown Editor */}
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 uppercase tracking-wider">
-                Full Content / Document Body
+                Full Content & Markdown Body
               </h2>
             </div>
 
-            <div className="p-6 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#121215] prose prose-zinc dark:prose-invert max-w-none text-xs sm:text-sm leading-relaxed space-y-4 font-sans whitespace-pre-wrap">
-              {activeItem.content}
-            </div>
+            {!isEditing ? (
+              <div className="p-6 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#121215] prose prose-zinc dark:prose-invert max-w-none text-xs sm:text-sm leading-relaxed space-y-4 font-sans whitespace-pre-wrap">
+                {activeItem.content}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <textarea
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  rows={14}
+                  placeholder="Write or edit your markdown notes here..."
+                  className="w-full bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 text-xs sm:text-sm rounded-xl p-4 border border-zinc-200 dark:border-zinc-800 focus:outline-none focus:border-indigo-500 font-mono leading-relaxed"
+                />
+                <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                  <span>Markdown formatting supported</span>
+                  <div className="flex items-center gap-2">
+                    <Button variant="ghost" size="sm" onClick={handleCancelEdit} disabled={isSaving}>
+                      Cancel
+                    </Button>
+                    <Button variant="primary" size="sm" onClick={handleSaveEdit} isLoading={isSaving} leftIcon={<Save size={13} />}>
+                      Save Changes
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -243,22 +502,31 @@ export const KnowledgeDetail: React.FC = () => {
 
             <div className="space-y-3 text-xs">
               <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Knowledge ID</span>
-                <span className="font-mono text-[11px] text-zinc-600 dark:text-zinc-300">{activeItem.id}</span>
+                <span className="text-zinc-400">Database ID</span>
+                <span className="font-mono text-[11px] text-zinc-600 dark:text-zinc-300 truncate max-w-[150px]" title={activeItem.id}>
+                  {activeItem.id}
+                </span>
               </div>
 
               <div className="flex items-center justify-between">
-                <span className="text-zinc-400">Processing Status</span>
+                <span className="text-zinc-400">Persistence</span>
                 <span className="font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                  {activeItem.processingStatus}
+                  PostgreSQL
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-zinc-400">Status</span>
+                <span className="font-medium text-zinc-700 dark:text-zinc-300">
+                  {activeItem.processingStatus || 'COMPLETED'}
                 </span>
               </div>
 
               {activeItem.fileName && (
                 <div className="flex items-center justify-between">
                   <span className="text-zinc-400">File Name</span>
-                  <span className="font-medium text-zinc-700 dark:text-zinc-300 truncate max-w-[140px]">
+                  <span className="font-medium text-zinc-700 dark:text-zinc-300 truncate max-w-[140px]" title={activeItem.fileName}>
                     {activeItem.fileName}
                   </span>
                 </div>
@@ -279,14 +547,14 @@ export const KnowledgeDetail: React.FC = () => {
                     rel="noreferrer"
                     className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
                   >
-                    Open Source Web Link <ExternalLink size={12} />
+                    Open Source Link <ExternalLink size={12} />
                   </a>
                 </div>
               )}
             </div>
           </div>
 
-          {/* Related Knowledge Graph / Connections */}
+          {/* Related Knowledge Connections */}
           <div className="p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#121215] space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-bold text-zinc-900 dark:text-zinc-100 uppercase tracking-wider flex items-center gap-1.5">
@@ -296,24 +564,28 @@ export const KnowledgeDetail: React.FC = () => {
             </div>
 
             <div className="space-y-2.5">
-              {relatedItems.map((rel) => (
-                <div
-                  key={rel.id}
-                  onClick={() => openDetailView(rel)}
-                  className="p-3 rounded-lg border border-zinc-100 dark:border-zinc-800 hover:border-indigo-500/50 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-all cursor-pointer group"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">
-                      <TypeIcon type={rel.type} size={12} />
-                      {rel.type}
-                    </span>
-                    <span className="text-[10px] font-medium text-indigo-500">92% Match</span>
+              {relatedItems.length === 0 ? (
+                <p className="text-xs text-zinc-400 py-2 text-center">No related notes found yet.</p>
+              ) : (
+                relatedItems.map((rel) => (
+                  <div
+                    key={rel.id}
+                    onClick={() => openDetailView(rel)}
+                    className="p-3 rounded-lg border border-zinc-100 dark:border-zinc-800 hover:border-indigo-500/50 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-all cursor-pointer group"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">
+                        <TypeIcon type={rel.type} size={12} />
+                        {rel.type}
+                      </span>
+                      <span className="text-[10px] font-medium text-indigo-500">Connected</span>
+                    </div>
+                    <h4 className="mt-1 text-xs font-bold text-zinc-800 dark:text-zinc-200 group-hover:text-indigo-500 transition-colors line-clamp-1">
+                      {rel.title}
+                    </h4>
                   </div>
-                  <h4 className="mt-1 text-xs font-bold text-zinc-800 dark:text-zinc-200 group-hover:text-indigo-500 transition-colors line-clamp-1">
-                    {rel.title}
-                  </h4>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
         </div>

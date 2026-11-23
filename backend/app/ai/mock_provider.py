@@ -2,6 +2,9 @@ from typing import List, Optional
 from app.ai.base import BaseAIProvider
 
 class MockAIProvider(BaseAIProvider):
+    async def generate(self, prompt: str, system_prompt: Optional[str] = None) -> str:
+        return f"Mock generated response for prompt: {prompt[:80]}"
+
     async def summarize(self, content: str, title: Optional[str] = None) -> str:
         if not content or len(content.strip()) == 0:
             return "No content provided to summarize."

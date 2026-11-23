@@ -2,30 +2,96 @@
 
 import React, { useState } from 'react';
 import { useKnowledge } from '@/context/KnowledgeContext';
-import { FolderKanban, Plus, ArrowRight, Trash2, Code2, Server, Cloud, GraduationCap, Brain } from 'lucide-react';
+import { FolderKanban, Plus, ArrowRight, Trash2, Edit2, AlertCircle, X } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { Collection } from '@/types';
 
 export const CollectionsView: React.FC = () => {
-  const { collections, createCollection, deleteCollection, selectCollectionFilter } = useKnowledge();
+  const {
+    collections,
+    createCollection,
+    updateCollection,
+    deleteCollection,
+    selectCollectionFilter,
+    collectionsError,
+    clearCollectionsError,
+    isLoading,
+  } = useKnowledge();
 
+  // Create Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [color, setColor] = useState('#3B82F6');
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Edit Modal State
+  const [editingCol, setEditingCol] = useState<Collection | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editColor, setEditColor] = useState('#3B82F6');
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
-    await createCollection({
-      name: name.trim(),
-      description: description.trim() || 'Knowledge collection',
-      icon: 'FolderKanban',
-      color,
-    });
-    setName('');
-    setDescription('');
-    setIsModalOpen(false);
+    setIsSubmitting(true);
+    setActionError(null);
+    try {
+      await createCollection({
+        name: name.trim(),
+        description: description.trim() || 'Knowledge collection',
+        icon: 'FolderKanban',
+        color,
+      });
+      setName('');
+      setDescription('');
+      setIsModalOpen(false);
+    } catch (err: any) {
+      setActionError(err?.message || 'Failed to create collection');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const openEditModal = (col: Collection, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingCol(col);
+    setEditName(col.name);
+    setEditDescription(col.description);
+    setEditColor(col.color);
+    setActionError(null);
+  };
+
+  const handleUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingCol || !editName.trim()) return;
+    setIsSubmitting(true);
+    setActionError(null);
+    try {
+      await updateCollection(editingCol.id, {
+        name: editName.trim(),
+        description: editDescription.trim(),
+        color: editColor,
+      });
+      setEditingCol(null);
+    } catch (err: any) {
+      setActionError(err?.message || 'Failed to update collection');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDelete = async (col: Collection, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (confirm(`Delete collection "${col.name}"?`)) {
+      try {
+        await deleteCollection(col.id);
+      } catch (err: any) {
+        alert(err?.message || 'Failed to delete collection');
+      }
+    }
   };
 
   return (
@@ -44,57 +110,131 @@ export const CollectionsView: React.FC = () => {
           variant="primary"
           size="sm"
           leftIcon={<Plus size={14} />}
-          onClick={() => setIsModalOpen(true)}
+          onClick={() => {
+            setActionError(null);
+            setIsModalOpen(true);
+          }}
         >
           Create Collection
         </Button>
       </div>
 
-      {/* Grid of collections */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {collections.map((col) => (
-          <div
-            key={col.id}
-            onClick={() => selectCollectionFilter(col.id)}
-            className="group relative flex flex-col justify-between p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#121215] hover:border-indigo-500/60 hover:shadow-lg transition-all cursor-pointer"
+      {/* Error Banner */}
+      {(collectionsError || actionError) && (
+        <div className="p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 rounded-xl flex items-center justify-between text-xs text-red-700 dark:text-red-300">
+          <div className="flex items-center gap-2">
+            <AlertCircle size={16} className="text-red-500 shrink-0" />
+            <span>{actionError || collectionsError}</span>
+          </div>
+          <button
+            onClick={() => {
+              setActionError(null);
+              clearCollectionsError();
+            }}
+            className="p-1 hover:bg-red-100 dark:hover:bg-red-900/40 rounded transition-colors"
           >
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span
-                  className="w-4 h-4 rounded-full"
-                  style={{ backgroundColor: col.color }}
-                />
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (confirm(`Delete collection "${col.name}"?`)) {
-                      deleteCollection(col.id);
-                    }
-                  }}
-                  className="text-zinc-300 dark:text-zinc-700 hover:text-red-500 transition-colors p-1"
-                >
-                  <Trash2 size={15} />
-                </button>
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
+      {/* Loading State */}
+      {isLoading && collections.length === 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#121215] space-y-4 animate-pulse"
+            >
+              <div className="w-6 h-6 rounded-full bg-zinc-200 dark:bg-zinc-800" />
+              <div className="h-4 w-3/4 rounded bg-zinc-200 dark:bg-zinc-800" />
+              <div className="h-3 w-full rounded bg-zinc-100 dark:bg-zinc-800/60" />
+              <div className="h-3 w-1/2 rounded bg-zinc-100 dark:bg-zinc-800/60" />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Empty State */}
+      {!isLoading && collections.length === 0 && (
+        <div className="text-center py-16 px-4 space-y-4 rounded-2xl border border-dashed border-zinc-300 dark:border-zinc-800 bg-white/50 dark:bg-[#121215]/50">
+          <div className="mx-auto w-12 h-12 rounded-full bg-indigo-50 dark:bg-indigo-950/50 flex items-center justify-center text-indigo-500">
+            <FolderKanban size={22} />
+          </div>
+          <div className="max-w-sm mx-auto space-y-1">
+            <h3 className="font-bold text-base text-zinc-900 dark:text-zinc-100">
+              No collections yet
+            </h3>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              Create your first collection to organize your knowledge by projects or topics.
+            </p>
+          </div>
+          <Button
+            variant="primary"
+            size="sm"
+            leftIcon={<Plus size={14} />}
+            onClick={() => {
+              setActionError(null);
+              setIsModalOpen(true);
+            }}
+          >
+            Create Collection
+          </Button>
+        </div>
+      )}
+
+      {/* Grid of collections */}
+      {collections.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {collections.map((col) => (
+            <div
+              key={col.id}
+              onClick={() => selectCollectionFilter(col.id)}
+              className="group relative flex flex-col justify-between p-6 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#121215] hover:border-indigo-500/60 hover:shadow-lg transition-all cursor-pointer"
+            >
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span
+                    className="w-4 h-4 rounded-full"
+                    style={{ backgroundColor: col.color }}
+                  />
+                  <div className="flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={(e) => openEditModal(col, e)}
+                      className="text-zinc-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors p-1"
+                      title="Edit collection"
+                    >
+                      <Edit2 size={14} />
+                    </button>
+                    <button
+                      onClick={(e) => handleDelete(col, e)}
+                      className="text-zinc-400 hover:text-red-500 transition-colors p-1"
+                      title="Delete collection"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+
+                <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                  {col.name}
+                </h2>
+
+                <p className="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2 leading-relaxed">
+                  {col.description}
+                </p>
               </div>
 
-              <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-                {col.name}
-              </h2>
-
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2 leading-relaxed">
-                {col.description}
-              </p>
+              <div className="mt-6 pt-4 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between text-xs font-semibold">
+                <span className="text-zinc-400">{col.itemCount} items stored</span>
+                <span className="text-indigo-600 dark:text-indigo-400 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                  Explore <ArrowRight size={13} />
+                </span>
+              </div>
             </div>
-
-            <div className="mt-6 pt-4 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between text-xs font-semibold">
-              <span className="text-zinc-400">{col.itemCount} items stored</span>
-              <span className="text-indigo-600 dark:text-indigo-400 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                Explore <ArrowRight size={13} />
-              </span>
-            </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* Create Modal */}
       {isModalOpen && (
@@ -104,6 +244,12 @@ export const CollectionsView: React.FC = () => {
               Create New Collection
             </h3>
 
+            {actionError && (
+              <div className="p-2.5 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 rounded-lg text-xs text-red-700 dark:text-red-300">
+                {actionError}
+              </div>
+            )}
+
             <form onSubmit={handleCreate} className="space-y-4">
               <div className="space-y-1">
                 <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">Name</label>
@@ -112,6 +258,7 @@ export const CollectionsView: React.FC = () => {
                   onChange={(e) => setName(e.target.value)}
                   placeholder="e.g. Distributed Systems"
                   required
+                  autoFocus
                 />
               </div>
 
@@ -138,8 +285,64 @@ export const CollectionsView: React.FC = () => {
                 <Button type="button" variant="ghost" onClick={() => setIsModalOpen(false)}>
                   Cancel
                 </Button>
-                <Button type="submit" variant="primary">
+                <Button type="submit" variant="primary" isLoading={isSubmitting}>
                   Create Collection
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Modal */}
+      {editingCol && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="w-full max-w-md bg-white dark:bg-[#121215] rounded-2xl border border-zinc-200 dark:border-zinc-800 p-6 space-y-4 shadow-2xl">
+            <h3 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
+              Edit Collection
+            </h3>
+
+            {actionError && (
+              <div className="p-2.5 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 rounded-lg text-xs text-red-700 dark:text-red-300">
+                {actionError}
+              </div>
+            )}
+
+            <form onSubmit={handleUpdate} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">Name</label>
+                <Input
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  required
+                  autoFocus
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">Description</label>
+                <Input
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">Color Pill</label>
+                <input
+                  type="color"
+                  value={editColor}
+                  onChange={(e) => setEditColor(e.target.value)}
+                  className="w-full h-9 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-transparent cursor-pointer p-1"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <Button type="button" variant="ghost" onClick={() => setEditingCol(null)}>
+                  Cancel
+                </Button>
+                <Button type="submit" variant="primary" isLoading={isSubmitting}>
+                  Save Changes
                 </Button>
               </div>
             </form>

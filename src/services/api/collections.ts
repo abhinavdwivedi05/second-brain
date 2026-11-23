@@ -1,53 +1,60 @@
 import { Collection } from '@/types';
-import { INITIAL_COLLECTIONS } from './mockData';
+import { apiClient } from './client';
 
-const COLLECTIONS_KEY = 'second_brain_collections_v1';
+export interface CreateCollectionDto {
+  name: string;
+  description?: string;
+  icon?: string;
+  color?: string;
+}
 
+export interface UpdateCollectionDto {
+  name?: string;
+  description?: string;
+  icon?: string;
+  color?: string;
+}
+
+export async function listCollections(): Promise<Collection[]> {
+  return apiClient.get<Collection[]>('/api/v1/collections');
+}
+
+export async function createCollection(data: CreateCollectionDto): Promise<Collection> {
+  return apiClient.post<Collection>('/api/v1/collections', data);
+}
+
+export async function getCollection(id: string): Promise<Collection> {
+  return apiClient.get<Collection>(`/api/v1/collections/${encodeURIComponent(id)}`);
+}
+
+export async function updateCollection(id: string, data: UpdateCollectionDto): Promise<Collection> {
+  return apiClient.patch<Collection>(`/api/v1/collections/${encodeURIComponent(id)}`, data);
+}
+
+export async function deleteCollection(id: string): Promise<void> {
+  await apiClient.delete<void>(`/api/v1/collections/${encodeURIComponent(id)}`);
+}
+
+// Backwards-compatible service adapter for existing code
 export class CollectionService {
-  private static getStored(): Collection[] {
-    if (typeof window === 'undefined') return INITIAL_COLLECTIONS;
-    try {
-      const stored = localStorage.getItem(COLLECTIONS_KEY);
-      if (!stored) {
-        localStorage.setItem(COLLECTIONS_KEY, JSON.stringify(INITIAL_COLLECTIONS));
-        return INITIAL_COLLECTIONS;
-      }
-      return JSON.parse(stored);
-    } catch {
-      return INITIAL_COLLECTIONS;
-    }
-  }
-
-  private static saveStored(items: Collection[]): void {
-    if (typeof window === 'undefined') return;
-    try {
-      localStorage.setItem(COLLECTIONS_KEY, JSON.stringify(items));
-    } catch (e) {
-      console.error('Failed to save collections', e);
-    }
-  }
-
   static async getAll(): Promise<Collection[]> {
-    return this.getStored();
+    return listCollections();
   }
 
-  static async create(collection: Omit<Collection, 'id' | 'createdAt' | 'itemCount'>): Promise<Collection> {
-    const list = this.getStored();
-    const created: Collection = {
-      ...collection,
-      id: `col-${Date.now()}`,
-      itemCount: 0,
-      createdAt: new Date().toISOString(),
-    };
-    const updated = [...list, created];
-    this.saveStored(updated);
-    return created;
+  static async create(data: CreateCollectionDto): Promise<Collection> {
+    return createCollection(data);
+  }
+
+  static async getById(id: string): Promise<Collection> {
+    return getCollection(id);
+  }
+
+  static async update(id: string, data: UpdateCollectionDto): Promise<Collection> {
+    return updateCollection(id, data);
   }
 
   static async delete(id: string): Promise<boolean> {
-    const list = this.getStored();
-    const filtered = list.filter((c) => c.id !== id);
-    this.saveStored(filtered);
+    await deleteCollection(id);
     return true;
   }
 }
