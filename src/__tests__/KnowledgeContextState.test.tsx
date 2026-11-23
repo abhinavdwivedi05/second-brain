@@ -30,6 +30,22 @@ jest.mock('@/services/api/knowledge', () => ({
   },
 }));
 
+jest.mock('@/services/api/dashboard', () => ({
+  fetchDashboardStats: jest.fn().mockResolvedValue({
+    totalKnowledge: 0,
+    totalNotes: 0,
+    totalLinks: 0,
+    totalDocuments: 0,
+    totalCollections: 0,
+    totalTags: 0,
+    totalFavorites: 0,
+    recentItems: [],
+    recentAccessed: [],
+    recentActivities: [],
+  }),
+  fetchActivities: jest.fn().mockResolvedValue([]),
+}));
+
 // Test consumer component
 const TestConsumer = () => {
   const {
@@ -154,7 +170,7 @@ describe('KnowledgeContext Collections and Tags state migration', () => {
   });
 
   const renderWithAuth = (isAuthenticated = true) => {
-    const mockAuthContext: any = {
+    const mockAuthContext = {
       isAuthenticated,
       user: { id: 'u-1', name: 'User 1', email: 'u1@test.com' },
       token: isAuthenticated ? 'fake-token' : null,
@@ -166,7 +182,7 @@ describe('KnowledgeContext Collections and Tags state migration', () => {
     };
 
     return render(
-      <AuthContext.Provider value={mockAuthContext}>
+      <AuthContext.Provider value={mockAuthContext as unknown as React.ComponentProps<typeof AuthContext.Provider>['value']}>
         <KnowledgeProvider>
           <TestConsumer />
         </KnowledgeProvider>

@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { useKnowledge } from '@/context/KnowledgeContext';
-import { Brain, Sparkles, Search, Layers, Zap, ArrowRight, CheckCircle2, ShieldCheck, Compass } from 'lucide-react';
+import { Brain, Sparkles, Search, Layers, Zap, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 
 export const LandingPage: React.FC = () => {
@@ -54,10 +54,10 @@ export const LandingPage: React.FC = () => {
       <section className="max-w-3xl mx-auto p-8 rounded-2xl bg-zinc-900/60 border border-zinc-800 text-center space-y-4 shadow-xl">
         <p className="text-xs font-bold uppercase tracking-widest text-indigo-400">Core Philosophy</p>
         <blockquote className="text-xl sm:text-2xl font-bold text-zinc-100 italic">
-          "Capture once. Organize intelligently. Retrieve when needed."
+          &ldquo;Capture once. Organize intelligently. Retrieve when needed.&rdquo;
         </blockquote>
         <p className="text-sm text-zinc-400">
-          I don't need to remember where I saved something. My Second Brain remembers it for me.
+          I don&apos;t need to remember where I saved something. My Second Brain remembers it for me.
         </p>
       </section>
 
@@ -75,7 +75,7 @@ export const LandingPage: React.FC = () => {
             </div>
             <h3 className="text-base font-bold text-zinc-100">1. Capture</h3>
             <p className="text-xs text-zinc-400 leading-relaxed">
-              Unified capture for Notes, Web Links, PDFs, Documents, and Voice recordings with multi-step OCR and parsing.
+              Unified capture for Notes, Web Links, PDFs, and Documents with multi-step OCR and parsing.
             </p>
           </div>
 

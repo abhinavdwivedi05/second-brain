@@ -24,43 +24,59 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  const initAuth = useCallback(async () => {
-    setIsLoading(true);
-    const storedToken = getStoredToken();
-
-    if (!storedToken) {
-      setToken(null);
-      setUser(null);
-      setIsAuthenticated(false);
-      setIsLoading(false);
-      return;
-    }
-
-    setToken(storedToken);
-
+  const refreshUser = useCallback(async (): Promise<void> => {
     try {
       const profile = await AuthService.getMe();
       setUser(profile);
       setIsAuthenticated(true);
-    } catch (err: any) {
-      // If 401 Unauthorized, clear invalid/expired token
-      if (err instanceof ApiClientError && err.status === 401) {
-        AuthService.logout();
-        setToken(null);
-        setUser(null);
-        setIsAuthenticated(false);
-      } else {
-        // Backend unavailable or network error: do not crash
-        console.warn('Backend unavailable or session verification failed:', err);
-      }
-    } finally {
-      setIsLoading(false);
+    } catch {
+      setUser(null);
+      setIsAuthenticated(false);
     }
   }, []);
 
   useEffect(() => {
-    initAuth();
-  }, [initAuth]);
+    let isMounted = true;
+
+    const init = async () => {
+      const storedToken = getStoredToken();
+      if (!storedToken) {
+        if (isMounted) setIsLoading(false);
+        return;
+      }
+
+      if (isMounted) setToken(storedToken);
+
+      try {
+        const profile = await AuthService.getMe();
+        if (isMounted) {
+          setUser(profile);
+          setIsAuthenticated(true);
+        }
+      } catch (err: unknown) {
+        if (err instanceof ApiClientError && err.status === 401) {
+          AuthService.logout();
+          if (isMounted) {
+            setToken(null);
+            setUser(null);
+            setIsAuthenticated(false);
+          }
+        } else {
+          console.warn('Backend unavailable or session verification failed:', err);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    void init();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const login = async (email: string, password: string): Promise<void> => {
     setIsLoading(true);
@@ -98,16 +114,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setToken(null);
     setUser(null);
     setIsAuthenticated(false);
-  };
-
-  const refreshUser = async (): Promise<void> => {
-    if (!token) return;
-    try {
-      const profile = await AuthService.getMe();
-      setUser(profile);
-    } catch (err) {
-      console.warn('Failed to refresh user profile:', err);
-    }
   };
 
   return (

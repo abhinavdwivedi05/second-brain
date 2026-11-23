@@ -11,7 +11,7 @@ def _to_camel(name: str) -> str:
 
 class KnowledgeCreate(BaseModel):
     title: str = Field(..., min_length=1, max_length=300)
-    type: str = Field("NOTE", description="NOTE, LINK, PDF, IMAGE, AUDIO, DOCUMENT")
+    type: str = Field("NOTE", description="NOTE, LINK, PDF, IMAGE, DOCUMENT")
     summary: Optional[str] = ""
     content: Optional[str] = ""
     original_url: Optional[str] = None
@@ -108,3 +108,46 @@ class KnowledgeListResponse(BaseModel):
         alias_generator=_to_camel,
         populate_by_name=True,
     )
+
+
+class UrlExtractRequest(BaseModel):
+    url: str = Field(..., min_length=1, max_length=2000, description="Public HTTP/HTTPS webpage URL")
+
+    model_config = ConfigDict(
+        alias_generator=_to_camel,
+        populate_by_name=True,
+    )
+
+
+class UrlExtractResponse(BaseModel):
+    title: str
+    original_url: str
+    canonical_url: Optional[str] = None
+    domain: str
+    description: Optional[str] = ""
+    content: str
+    summary: str
+    tags: List[str] = Field(default_factory=list)
+    key_concepts: List[str] = Field(default_factory=list)
+    word_count: int = 0
+    extraction_status: str = "SUCCESS"
+
+    model_config = ConfigDict(
+        alias_generator=_to_camel,
+        populate_by_name=True,
+    )
+
+
+class UrlImportRequest(BaseModel):
+    url: str = Field(..., min_length=1, max_length=2000, description="Public HTTP/HTTPS webpage URL")
+    collection_id: Optional[str] = None
+    title: Optional[str] = None
+    summary: Optional[str] = None
+    content: Optional[str] = None
+    tags: Optional[List[str]] = None
+
+    model_config = ConfigDict(
+        alias_generator=_to_camel,
+        populate_by_name=True,
+    )
+

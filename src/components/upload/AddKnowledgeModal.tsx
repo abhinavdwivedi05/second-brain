@@ -2,17 +2,21 @@
 
 import React, { useState } from 'react';
 import { useKnowledge } from '@/context/KnowledgeContext';
-import { KnowledgeType } from '@/types';
+import { uploadFile } from '@/services/api/files';
+import { getKnowledge, KnowledgeService } from '@/services/api/knowledge';
 import {
   X,
   FileText,
   Link2,
   FileUp,
-  Mic,
   Plus,
   AlertCircle,
   Tag as TagIcon,
   FolderKanban,
+  Globe,
+  Sparkles,
+  Loader2,
+  CheckCircle2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -25,9 +29,10 @@ export const AddKnowledgeModal: React.FC = () => {
     collections,
     createKnowledge,
     openDetailView,
+    refreshAllData,
   } = useKnowledge();
 
-  const [activeTab, setActiveTab] = useState<'NOTE' | 'LINK' | 'FILE' | 'AUDIO'>('NOTE');
+  const [activeTab, setActiveTab] = useState<'NOTE' | 'LINK' | 'FILE'>('NOTE');
 
   // Form fields
   const [title, setTitle] = useState('');
@@ -38,13 +43,16 @@ export const AddKnowledgeModal: React.FC = () => {
   const [tagInput, setTagInput] = useState('');
   const [tagsList, setTagsList] = useState<string[]>(['engineering', 'notes']);
 
-  // File placeholder state
+  // File upload state
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
-  // Audio recording simulation state
-  const [isRecording, setIsRecording] = useState(false);
+  // Web Clipper extraction state
+  const [isExtractingUrl, setIsExtractingUrl] = useState(false);
+  const [extractProgressStep, setExtractProgressStep] = useState<string>('');
+  const [extractionSuccess, setExtractionSuccess] = useState<string | null>(null);
 
   if (!isAddModalOpen) return null;
 
@@ -60,14 +68,101 @@ export const AddKnowledgeModal: React.FC = () => {
     setTagsList(tagsList.filter((t) => t !== tagToRemove));
   };
 
+  const validateAndSetFile = (f: File) => {
+    const ext = f.name.substring(f.name.lastIndexOf('.')).toLowerCase();
+    if (ext !== '.pdf' && ext !== '.docx') {
+      setFormError(`Unsupported file format '${ext}'. Only PDF (.pdf) and Word (.docx) documents are accepted.`);
+      setSelectedFile(null);
+      return false;
+    }
+    if (f.size > 50 * 1024 * 1024) {
+      setFormError('File size exceeds the 50MB maximum upload limit.');
+      setSelectedFile(null);
+      return false;
+    }
+    setFormError(null);
+    setSelectedFile(f);
+    if (!title.trim()) {
+      const nameWithoutExt = f.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+      setTitle(nameWithoutExt.charAt(0).toUpperCase() + nameWithoutExt.slice(1));
+    }
+    return true;
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      const f = e.target.files[0];
-      setSelectedFile(f);
-      if (!title.trim()) {
-        const nameWithoutExt = f.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
-        setTitle(nameWithoutExt.charAt(0).toUpperCase() + nameWithoutExt.slice(1));
+      validateAndSetFile(e.target.files[0]);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      validateAndSetFile(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleFetchAndAnalyzeUrl = async () => {
+    const targetUrl = url.trim();
+    if (!targetUrl) {
+      setFormError('Please enter a website URL before analyzing.');
+      return;
+    }
+    if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+      setFormError('URL must begin with http:// or https://');
+      return;
+    }
+
+    setIsExtractingUrl(true);
+    setFormError(null);
+    setExtractionSuccess(null);
+    setExtractProgressStep('Fetching webpage content...');
+
+    const timer1 = setTimeout(() => setExtractProgressStep('Extracting readable article content...'), 700);
+    const timer2 = setTimeout(() => setExtractProgressStep('Identifying technical keywords & concepts...'), 1700);
+    const timer3 = setTimeout(() => setExtractProgressStep('Generating content-specific summary...'), 2700);
+
+    try {
+      const res = await KnowledgeService.extractUrl(targetUrl);
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+      clearTimeout(timer3);
+      setExtractProgressStep('Preparing knowledge item...');
+
+      // Auto-populate form fields
+      if (res.title) setTitle(res.title);
+      if (res.summary) setSummary(res.summary);
+      if (res.content) setContent(res.content);
+      if (res.canonicalUrl) setUrl(res.canonicalUrl);
+      if (res.tags && res.tags.length > 0) {
+        setTagsList((prev) => Array.from(new Set([...prev, ...res.tags])));
       }
+      setExtractionSuccess(
+        `Successfully extracted "${res.domain}" (${res.wordCount} words). Review or edit details below before saving.`
+      );
+    } catch (err: unknown) {
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+      clearTimeout(timer3);
+      console.error('Failed to extract URL:', err);
+      setFormError((err as Error)?.message || 'Failed to extract content from the website. You can still enter details manually.');
+    } finally {
+      setIsExtractingUrl(false);
+      setExtractProgressStep('');
     }
   };
 
@@ -86,59 +181,81 @@ export const AddKnowledgeModal: React.FC = () => {
       return;
     }
 
+    if (activeTab === 'FILE') {
+      if (!selectedFile) {
+        setFormError('Please select a PDF or DOCX document to upload.');
+        return;
+      }
+
+      setIsProcessing(true);
+      try {
+        const uploaded = await uploadFile(selectedFile, {
+          title: cleanTitle,
+          collectionId: selectedCollection || undefined,
+          tags: tagsList,
+          createKnowledge: true,
+        });
+
+        await refreshAllData();
+
+        if (uploaded.knowledgeId) {
+          const kItem = await getKnowledge(uploaded.knowledgeId);
+          openDetailView(kItem);
+        }
+
+        setIsAddModalOpen(false);
+        resetForm();
+      } catch (err: unknown) {
+        console.error('Failed to upload document:', err);
+        setFormError((err as Error)?.message || 'Failed to upload and process document.');
+      } finally {
+        setIsProcessing(false);
+      }
+      return;
+    }
+
     setIsProcessing(true);
 
     try {
-      let kType: KnowledgeType = 'NOTE';
       let finalContent = content.trim();
       let finalSummary = summary.trim();
 
       if (activeTab === 'LINK') {
-        kType = 'LINK';
         if (!finalContent) {
           finalContent = `# ${cleanTitle}\n\n**Bookmarked URL:** ${url.trim()}\n\nSaved webpage link entry in Second Brain.`;
         }
         if (!finalSummary) {
           finalSummary = `Web link bookmark for ${cleanTitle} (${url.trim()}).`;
         }
-      } else if (activeTab === 'FILE') {
-        const fName = selectedFile ? selectedFile.name : 'Uploaded Document';
-        const fSize = selectedFile ? (selectedFile.size / 1024 / 1024).toFixed(2) + ' MB' : '0 MB';
-        const isPdf = fName.toLowerCase().endsWith('.pdf');
-        kType = isPdf ? 'PDF' : 'DOCUMENT';
 
-        if (!finalContent) {
-          finalContent = `# ${cleanTitle}\n\n**Attached File:** \`${fName}\` (${fSize})\n\nDocument ingested into PostgreSQL knowledge base. Full automated background text processing is scheduled for Day 2 pipeline.`;
-        }
-        if (!finalSummary) {
-          finalSummary = `Document file ${fName} recorded in Second Brain.`;
-        }
-      } else if (activeTab === 'AUDIO') {
-        kType = 'AUDIO';
-        if (!finalContent) {
-          finalContent = `# ${cleanTitle}\n\nAudio voice recording entry ingested into Second Brain. Speech-to-text transcription scheduled for Day 2 pipeline.`;
-        }
-        if (!finalSummary) {
-          finalSummary = `Voice note recording: ${cleanTitle}.`;
-        }
-      } else {
-        if (!finalContent) {
-          finalContent = cleanTitle;
-        }
-        if (!finalSummary) {
-          finalSummary = `Personal knowledge note on ${cleanTitle}.`;
-        }
+        const created = await KnowledgeService.importUrl({
+          url: url.trim(),
+          collectionId: selectedCollection || undefined,
+          title: cleanTitle,
+          summary: finalSummary,
+          content: finalContent,
+          tags: tagsList,
+        });
+
+        await refreshAllData();
+        setIsAddModalOpen(false);
+        resetForm();
+        openDetailView(created);
+        return;
+      }
+
+      if (!finalContent) {
+        finalContent = cleanTitle;
+      }
+      if (!finalSummary) {
+        finalSummary = `Personal knowledge note on ${cleanTitle}.`;
       }
 
       const created = await createKnowledge({
         title: cleanTitle,
-        type: kType,
+        type: 'NOTE',
         summary: finalSummary,
         content: finalContent,
-        originalUrl: activeTab === 'LINK' ? url.trim() : undefined,
-        fileName: selectedFile ? selectedFile.name : undefined,
-        fileSize: selectedFile ? (selectedFile.size / 1024 / 1024).toFixed(2) + ' MB' : undefined,
-        fileType: selectedFile ? selectedFile.type : undefined,
         tags: tagsList,
         collectionId: selectedCollection || undefined,
         isFavorite: false,
@@ -149,7 +266,6 @@ export const AddKnowledgeModal: React.FC = () => {
         keyConcepts: tagsList.map((t) => t.toUpperCase()),
         relatedKnowledgeIds: [],
         aiInsights: ['Successfully persisted in Second Brain database.'],
-        audioDuration: activeTab === 'AUDIO' ? '02:30' : undefined,
       });
 
       setIsAddModalOpen(false);
@@ -173,6 +289,9 @@ export const AddKnowledgeModal: React.FC = () => {
     setTagsList(['engineering', 'notes']);
     setSelectedFile(null);
     setFormError(null);
+    setExtractionSuccess(null);
+    setIsExtractingUrl(false);
+    setExtractProgressStep('');
   };
 
   return (
@@ -185,7 +304,7 @@ export const AddKnowledgeModal: React.FC = () => {
               <Plus size={18} className="text-indigo-500" /> Add Knowledge
             </h2>
             <p className="text-xs text-zinc-500 dark:text-zinc-400">
-              Capture notes, web links, documents, or voice thoughts.
+              Capture notes, web links, or documents.
             </p>
           </div>
           <button
@@ -244,21 +363,6 @@ export const AddKnowledgeModal: React.FC = () => {
           >
             <FileUp size={15} /> Document File
           </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab('AUDIO');
-              setFormError(null);
-            }}
-            className={`flex items-center gap-2 px-3 py-2 text-xs font-semibold border-b-2 transition-all ${
-              activeTab === 'AUDIO'
-                ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
-                : 'border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'
-            }`}
-          >
-            <Mic size={15} /> Voice Note
-          </button>
         </div>
 
         {/* Form Body */}
@@ -268,6 +372,61 @@ export const AddKnowledgeModal: React.FC = () => {
             <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 flex items-center gap-2 text-xs text-red-700 dark:text-red-300 animate-fade-in">
               <AlertCircle size={16} className="text-red-500 shrink-0" />
               <span>{formError}</span>
+            </div>
+          )}
+
+          {/* Website Link Field & Intelligent Web Clipper */}
+          {activeTab === 'LINK' && (
+            <div className="p-4 rounded-xl border border-indigo-200 dark:border-indigo-800/60 bg-indigo-50/30 dark:bg-indigo-950/20 space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
+                  <Globe size={14} className="text-indigo-500" />
+                  Website URL <span className="text-red-500">*</span>
+                </label>
+                <span className="text-[10px] text-zinc-500">Public HTTP or HTTPS URL</span>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <div className="flex-1">
+                  <Input
+                    type="url"
+                    value={url}
+                    onChange={(e) => {
+                      setUrl(e.target.value);
+                      if (extractionSuccess) setExtractionSuccess(null);
+                    }}
+                    placeholder="https://docs.postgresql.org/current/mvcc.html"
+                    leftIcon={<Link2 size={15} />}
+                    required
+                  />
+                </div>
+                <Button
+                  type="button"
+                  variant="primary"
+                  onClick={handleFetchAndAnalyzeUrl}
+                  isLoading={isExtractingUrl}
+                  disabled={isProcessing || isExtractingUrl}
+                  leftIcon={<Sparkles size={14} />}
+                  className="whitespace-nowrap shrink-0"
+                >
+                  Fetch & Analyze Website
+                </Button>
+              </div>
+
+              {/* Progress message during extraction */}
+              {isExtractingUrl && (
+                <div className="flex items-center gap-2 text-xs font-medium text-indigo-600 dark:text-indigo-400 animate-pulse pt-1">
+                  <Loader2 size={14} className="animate-spin" />
+                  <span>{extractProgressStep || 'Analyzing webpage...'}</span>
+                </div>
+              )}
+
+              {/* Success message banner */}
+              {extractionSuccess && !isExtractingUrl && (
+                <div className="p-2.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs text-emerald-700 dark:text-emerald-300 flex items-center gap-2 animate-fade-in">
+                  <CheckCircle2 size={15} className="text-emerald-500 shrink-0" />
+                  <span>{extractionSuccess}</span>
+                </div>
+              )}
             </div>
           )}
 
@@ -284,36 +443,28 @@ export const AddKnowledgeModal: React.FC = () => {
             />
           </div>
 
-          {/* Website Link Field */}
-          {activeTab === 'LINK' && (
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
-                URL / Web Address <span className="text-red-500">*</span>
-              </label>
-              <Input
-                type="url"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder="https://docs.postgresql.org/current/mvcc.html"
-                leftIcon={<Link2 size={15} />}
-                required
-              />
-            </div>
-          )}
-
           {/* Upload File Section */}
           {activeTab === 'FILE' && (
             <div className="space-y-1">
               <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
-                File Attachment (Day 1 Metadata Ingestion)
+                Document File (.pdf or .docx)
               </label>
-              <div className="border-2 border-dashed border-zinc-300 dark:border-zinc-700 hover:border-indigo-500 dark:hover:border-indigo-500 rounded-xl p-6 text-center bg-zinc-50/50 dark:bg-zinc-900/30 transition-colors">
+              <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={`border-2 border-dashed rounded-xl p-6 text-center transition-colors ${
+                  isDragging
+                    ? 'border-indigo-500 bg-indigo-50/40 dark:bg-indigo-950/40'
+                    : 'border-zinc-300 dark:border-zinc-700 hover:border-indigo-500 dark:hover:border-indigo-500 bg-zinc-50/50 dark:bg-zinc-900/30'
+                }`}
+              >
                 <input
                   type="file"
                   id="file-upload"
                   onChange={handleFileChange}
                   className="hidden"
-                  accept=".pdf,.docx,.doc,.png,.jpg,.jpeg,.mp3"
+                  accept=".pdf,.docx"
                 />
                 <label htmlFor="file-upload" className="cursor-pointer space-y-2 inline-block">
                   <div className="w-10 h-10 rounded-full bg-indigo-50 dark:bg-indigo-950/50 flex items-center justify-center mx-auto text-indigo-500">
@@ -321,38 +472,18 @@ export const AddKnowledgeModal: React.FC = () => {
                   </div>
                   <div className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
                     {selectedFile ? (
-                      <span className="text-indigo-600 dark:text-indigo-400">
+                      <span className="text-indigo-600 dark:text-indigo-400 font-bold">
                         Selected: {selectedFile.name} ({(selectedFile.size / 1024 / 1024).toFixed(2)} MB)
                       </span>
                     ) : (
-                      'Click to attach PDF, Word Document, or Image'
+                      'Click to browse or drag & drop PDF / Word (.docx) document'
                     )}
                   </div>
                   <p className="text-[11px] text-zinc-400">
-                    Day 1 registers the document knowledge record in PostgreSQL. Deep binary OCR/parsing connects on Day 2.
+                    Supported formats: PDF and DOCX (up to 50MB). Extracted text is saved directly to PostgreSQL.
                   </p>
                 </label>
               </div>
-            </div>
-          )}
-
-          {/* Voice Recording Section */}
-          {activeTab === 'AUDIO' && (
-            <div className="p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50 space-y-3 text-center">
-              <div className="w-12 h-12 rounded-full bg-amber-500/10 text-amber-500 flex items-center justify-center mx-auto">
-                <Mic size={24} className={isRecording ? 'animate-pulse text-red-500' : ''} />
-              </div>
-              <div className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
-                {isRecording ? 'Recording voice note...' : 'Voice Recorder Ready'}
-              </div>
-              <Button
-                type="button"
-                variant={isRecording ? 'danger' : 'secondary'}
-                size="sm"
-                onClick={() => setIsRecording(!isRecording)}
-              >
-                {isRecording ? 'Stop Recording' : 'Start Microphone Capture'}
-              </Button>
             </div>
           )}
 
@@ -450,8 +581,14 @@ export const AddKnowledgeModal: React.FC = () => {
             >
               Cancel
             </Button>
-            <Button type="submit" variant="primary" size="md" isLoading={isProcessing}>
-              Save to PostgreSQL
+            <Button
+              type="submit"
+              variant="primary"
+              size="md"
+              isLoading={isProcessing}
+              disabled={isProcessing || isExtractingUrl}
+            >
+              Save to Second Brain
             </Button>
           </div>
         </form>

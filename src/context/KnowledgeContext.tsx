@@ -9,6 +9,7 @@ import {
   ActivityLog,
   KnowledgeType,
   SearchFilterOptions,
+  DashboardStats,
 } from '@/types';
 import {
   KnowledgeService,
@@ -30,12 +31,13 @@ import {
   updateTag as apiUpdateTag,
   deleteTag as apiDeleteTag,
 } from '@/services/api/tags';
+import { fetchDashboardStats, fetchActivities } from '@/services/api/dashboard';
 import {
   migrateCollectionsIfNeeded,
   migrateTagsIfNeeded,
   migrateKnowledgeIfNeeded,
 } from '@/services/api/dataMigration';
-import { INITIAL_USER, INITIAL_ACTIVITIES } from '@/services/api/mockData';
+import { INITIAL_USER } from '@/services/api/mockData';
 import { AuthContext } from '@/context/AuthContext';
 import { ApiClientError } from '@/services/api/client';
 
@@ -71,6 +73,8 @@ interface KnowledgeContextType {
   tags: Tag[];
   user: UserProfile;
   activities: ActivityLog[];
+  dashboardStats: DashboardStats | null;
+  refreshDashboard: () => Promise<void>;
   isLoading: boolean;
 
   // Error States
@@ -133,7 +137,8 @@ export function KnowledgeProvider({ children }: { children: React.ReactNode }) {
   const authContext = useContext(AuthContext);
   const user = authContext?.user || INITIAL_USER;
   const isAuthenticated = authContext?.isAuthenticated ?? false;
-  const [activities, setActivities] = useState<ActivityLog[]>(INITIAL_ACTIVITIES);
+  const [activities, setActivities] = useState<ActivityLog[]>([]);
+  const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [knowledgeError, setKnowledgeError] = useState<string | null>(null);
   const [collectionsError, setCollectionsError] = useState<string | null>(null);
@@ -145,15 +150,30 @@ export function KnowledgeProvider({ children }: { children: React.ReactNode }) {
   const [isAiDrawerOpen, setIsAiDrawerOpen] = useState<boolean>(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
 
+  const refreshDashboard = useCallback(async () => {
+    if (!isAuthenticated) return;
+    try {
+      const stats = await fetchDashboardStats();
+      setDashboardStats(stats);
+      if (stats.recentActivities) {
+        setActivities(stats.recentActivities);
+      }
+    } catch (err) {
+      console.error('Failed to refresh dashboard stats:', err);
+    }
+  }, [isAuthenticated]);
+
   const refreshAllData = useCallback(async () => {
     setIsLoading(true);
     try {
       if (isAuthenticated) {
         try {
-          const [fetchedKnowledge, fetchedCols, fetchedTags] = await Promise.all([
+          const [fetchedKnowledge, fetchedCols, fetchedTags, fetchedStats, fetchedActivities] = await Promise.all([
             listKnowledge(filterOptions),
             listCollections(),
             listTags(),
+            fetchDashboardStats().catch(() => null),
+            fetchActivities(20).catch(() => []),
           ]);
 
           // Safe one-time legacy migration if needed
@@ -164,6 +184,14 @@ export function KnowledgeProvider({ children }: { children: React.ReactNode }) {
           setKnowledgeItems(items);
           setCollections(cols);
           setTags(tgs);
+          if (fetchedStats) setDashboardStats(fetchedStats);
+          if (fetchedActivities && fetchedActivities.length > 0) {
+            setActivities(fetchedActivities);
+          } else if (fetchedStats && fetchedStats.recentActivities) {
+            setActivities(fetchedStats.recentActivities);
+          } else {
+            setActivities([]);
+          }
           setKnowledgeError(null);
           setCollectionsError(null);
           setTagsError(null);
@@ -173,6 +201,8 @@ export function KnowledgeProvider({ children }: { children: React.ReactNode }) {
             setKnowledgeItems([]);
             setCollections([]);
             setTags([]);
+            setActivities([]);
+            setDashboardStats(null);
           } else {
             const errorMsg = (apiErr as Error)?.message || 'Failed to load knowledge records from server';
             setKnowledgeError(errorMsg);
@@ -184,6 +214,8 @@ export function KnowledgeProvider({ children }: { children: React.ReactNode }) {
         setKnowledgeItems([]);
         setCollections([]);
         setTags([]);
+        setActivities([]);
+        setDashboardStats(null);
       }
     } catch (err: unknown) {
       console.error('Failed to load knowledge data:', err);
@@ -453,6 +485,7 @@ export function KnowledgeProvider({ children }: { children: React.ReactNode }) {
   const clearTagsError = () => setTagsError(null);
 
   const resetFilters = () => {
+    setActiveItem(null);
     setFilterOptions({
       query: '',
       type: 'ALL',
@@ -465,17 +498,20 @@ export function KnowledgeProvider({ children }: { children: React.ReactNode }) {
 
   const selectTagFilter = (tagName: string) => {
     resetFilters();
+    setActiveItem(null);
     setFilterOptions((prev) => ({ ...prev, tag: tagName }));
     setActiveView('library');
   };
 
   const selectCollectionFilter = (collectionId: string) => {
     resetFilters();
+    setActiveItem(null);
     setFilterOptions((prev) => ({ ...prev, collectionId }));
     setActiveView('library');
   };
 
   const selectTypeFilter = (type: KnowledgeType | 'ALL') => {
+    setActiveItem(null);
     setFilterOptions((prev) => ({ ...prev, type }));
     setActiveView('library');
   };
@@ -498,6 +534,8 @@ export function KnowledgeProvider({ children }: { children: React.ReactNode }) {
         tags,
         user,
         activities,
+        dashboardStats,
+        refreshDashboard,
         isLoading,
         knowledgeError,
         collectionsError,

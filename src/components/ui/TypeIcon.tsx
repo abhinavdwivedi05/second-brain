@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { KnowledgeType } from '@/types';
-import { FileText, Link2, FileCode, Image, FileAudio, File } from 'lucide-react';
+import { FileText, Link2, FileCode, Image as ImageIcon, File } from 'lucide-react';
 
 interface TypeIconProps {
   type: KnowledgeType;
@@ -19,9 +19,7 @@ export const TypeIcon: React.FC<TypeIconProps> = ({ type, className = '', size =
     case 'PDF':
       return <FileCode size={size} className={`text-red-500 dark:text-red-400 ${className}`} />;
     case 'IMAGE':
-      return <Image size={size} className={`text-purple-500 dark:text-purple-400 ${className}`} />;
-    case 'AUDIO':
-      return <FileAudio size={size} className={`text-amber-500 dark:text-amber-400 ${className}`} />;
+      return <ImageIcon size={size} className={`text-purple-500 dark:text-purple-400 ${className}`} />;
     case 'DOCUMENT':
       return <File size={size} className={`text-indigo-500 dark:text-indigo-400 ${className}`} />;
     default:

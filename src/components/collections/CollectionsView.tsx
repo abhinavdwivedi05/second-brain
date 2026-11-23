@@ -48,8 +48,8 @@ export const CollectionsView: React.FC = () => {
       setName('');
       setDescription('');
       setIsModalOpen(false);
-    } catch (err: any) {
-      setActionError(err?.message || 'Failed to create collection');
+    } catch (err: unknown) {
+      setActionError((err as Error)?.message || 'Failed to create collection');
     } finally {
       setIsSubmitting(false);
     }
@@ -76,8 +76,8 @@ export const CollectionsView: React.FC = () => {
         color: editColor,
       });
       setEditingCol(null);
-    } catch (err: any) {
-      setActionError(err?.message || 'Failed to update collection');
+    } catch (err: unknown) {
+      setActionError((err as Error)?.message || 'Failed to update collection');
     } finally {
       setIsSubmitting(false);
     }
@@ -88,8 +88,8 @@ export const CollectionsView: React.FC = () => {
     if (confirm(`Delete collection "${col.name}"?`)) {
       try {
         await deleteCollection(col.id);
-      } catch (err: any) {
-        alert(err?.message || 'Failed to delete collection');
+      } catch (err: unknown) {
+        alert((err as Error)?.message || 'Failed to delete collection');
       }
     }
   };

@@ -1,3 +1,5 @@
+import re
+from urllib.parse import urlparse
 from typing import List, Optional
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
@@ -16,7 +18,18 @@ from app.schemas.knowledge import (
     KnowledgeUpdate,
     KnowledgeOut,
     KnowledgeListResponse,
+    UrlExtractRequest,
+    UrlExtractResponse,
+    UrlImportRequest,
 )
+from app.services.web_extractor import (
+    web_extractor,
+    validate_target_url,
+    SSRFSecurityError,
+    WebDownloadError,
+    WebExtractionError,
+)
+from app.services.activity_service import log_activity
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])
 
@@ -243,6 +256,15 @@ async def create_knowledge(
     )
 
     db.add(new_item)
+    await db.flush()
+    await log_activity(
+        db,
+        user_id=current_user.id,
+        action="CREATED",
+        knowledge_id=new_item.id,
+        knowledge_title=clean_title,
+        item_type=clean_type,
+    )
     await db.commit()
 
     # Re-fetch with loaded relationships
@@ -329,6 +351,214 @@ async def batch_create_knowledge(
     )
     all_res = await db.execute(query)
     return [_to_knowledge_out(k) for k in all_res.scalars().unique().all()]
+
+
+@router.post("/extract-url", response_model=UrlExtractResponse)
+async def extract_url_content(
+    payload: UrlExtractRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Fetch and extract readable content, summary, and suggested tags from a public webpage.
+    
+    Validates URL against SSRF and private network attacks. Does not persist to DB.
+    """
+    url = (payload.url or "").strip()
+    if not url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="URL cannot be empty.",
+        )
+
+    # Fetch user's existing tags for reconciliation
+    tags_res = await db.execute(select(Tag.name).where(Tag.user_id == current_user.id))
+    existing_tags = tags_res.scalars().all()
+
+    try:
+        enriched = await web_extractor.analyze_and_enrich(url, existing_tags)
+        return UrlExtractResponse(**enriched)
+    except SSRFSecurityError as ssrf_err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Security rejection: {str(ssrf_err)}",
+        )
+    except WebDownloadError as dl_err:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Failed to fetch webpage: {str(dl_err)}",
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Webpage extraction failed: {str(exc)}",
+        )
+
+
+@router.post("/import-url", response_model=KnowledgeOut, status_code=status.HTTP_201_CREATED)
+async def import_url_knowledge(
+    payload: UrlImportRequest,
+    response: Response,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Extract and permanently store a public webpage as a searchable knowledge item in PostgreSQL."""
+    url = (payload.url or "").strip()
+    if not url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="URL cannot be empty.",
+        )
+
+    # Validate collection assignment if provided
+    collection_id = None
+    if payload.collection_id:
+        col_query = select(Collection).where(
+            Collection.id == payload.collection_id,
+            Collection.user_id == current_user.id,
+        )
+        col_res = await db.execute(col_query)
+        col = col_res.scalars().first()
+        if not col:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Assigned collection not found or access denied.",
+            )
+        collection_id = col.id
+
+    # Check if user provided edited fields or if we need to fetch & analyze
+    has_custom_content = bool(payload.content and payload.content.strip())
+    has_custom_title = bool(payload.title and payload.title.strip())
+
+    tags_res = await db.execute(select(Tag.name).where(Tag.user_id == current_user.id))
+    existing_tags = tags_res.scalars().all()
+
+    try:
+        clean_url = validate_target_url(url)
+    except SSRFSecurityError as ssrf_err:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Security rejection: {str(ssrf_err)}",
+        )
+
+    canonical_url = clean_url
+    domain = urlparse(clean_url).netloc
+
+    if has_custom_content and has_custom_title:
+        final_title = payload.title.strip()
+        final_content = payload.content.strip()
+        final_summary = (payload.summary or "").strip() or f"Web link bookmark for {final_title} ({clean_url})."
+        raw_tags = payload.tags or []
+        words = re.findall(r"\b[A-Za-z]{4,}\b", f"{final_title} {final_content[:300]}")
+        final_concepts = [w.capitalize() for w in words]
+        final_concepts = list(dict.fromkeys(final_concepts))[:6]
+    else:
+        try:
+            enriched = await web_extractor.analyze_and_enrich(clean_url, existing_tags)
+            final_title = (payload.title or "").strip() or enriched["title"]
+            final_content = (payload.content or "").strip() or enriched["content"]
+            final_summary = (payload.summary or "").strip() or enriched["summary"]
+            raw_tags = payload.tags if payload.tags is not None else enriched["tags"]
+            final_concepts = enriched["key_concepts"]
+            canonical_url = enriched.get("canonical_url") or clean_url
+            domain = enriched.get("domain") or domain
+        except SSRFSecurityError as ssrf_err:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Security rejection: {str(ssrf_err)}",
+            )
+        except WebDownloadError as dl_err:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Failed to fetch webpage: {str(dl_err)}",
+            )
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Webpage extraction failed: {str(exc)}",
+            )
+
+    # Duplicate check: check if user already imported this URL
+    dup_query = (
+        select(Knowledge)
+        .options(selectinload(Knowledge.tags), selectinload(Knowledge.collection))
+        .where(
+            Knowledge.user_id == current_user.id,
+            Knowledge.type == "LINK",
+            or_(
+                Knowledge.original_url == clean_url,
+                Knowledge.original_url == canonical_url,
+                Knowledge.original_url == url,
+            ),
+        )
+    )
+    dup_res = await db.execute(dup_query)
+    existing_item = dup_res.scalars().first()
+
+    now = _utc_now()
+    resolved_tags = await _resolve_tags_for_user(db, current_user.id, raw_tags)
+
+    if existing_item:
+        # Update existing record and return HTTP 200
+        existing_item.title = final_title
+        existing_item.summary = final_summary
+        existing_item.content = final_content
+        existing_item.collection_id = collection_id or existing_item.collection_id
+        existing_item.tags = resolved_tags
+        existing_item.key_concepts = final_concepts
+        existing_item.updated_at = now
+        await db.commit()
+        response.status_code = status.HTTP_200_OK
+        reload_q = (
+            select(Knowledge)
+            .options(selectinload(Knowledge.tags), selectinload(Knowledge.collection))
+            .where(Knowledge.id == existing_item.id)
+        )
+        reloaded = (await db.execute(reload_q)).scalars().first()
+        return _to_knowledge_out(reloaded or existing_item)
+
+    # Create new Knowledge item
+    new_knowledge = Knowledge(
+        user_id=current_user.id,
+        title=final_title,
+        type="LINK",
+        summary=final_summary,
+        content=final_content,
+        original_url=clean_url,
+        file_name=domain,
+        file_type="text/html",
+        collection_id=collection_id,
+        is_favorite=False,
+        is_archived=False,
+        processing_status="COMPLETED",
+        processing_progress=100,
+        processing_step="Webpage content extracted and indexed",
+        key_concepts=final_concepts,
+        related_knowledge_ids=[],
+        ai_insights=[f"Extracted from {domain}"],
+        created_at=now,
+        updated_at=now,
+        last_accessed_at=now,
+        tags=resolved_tags,
+    )
+    db.add(new_knowledge)
+    await db.flush()
+    await log_activity(
+        db,
+        user_id=current_user.id,
+        action="CREATED",
+        knowledge_id=new_knowledge.id,
+        knowledge_title=final_title,
+        item_type="LINK",
+    )
+    await db.commit()
+
+    reload_q = (
+        select(Knowledge)
+        .options(selectinload(Knowledge.tags), selectinload(Knowledge.collection))
+        .where(Knowledge.id == new_knowledge.id)
+    )
+    reloaded = (await db.execute(reload_q)).scalars().first()
+    return _to_knowledge_out(reloaded or new_knowledge)
 
 
 @router.get("/{knowledge_id}", response_model=KnowledgeOut)
@@ -439,6 +669,14 @@ async def update_knowledge(
         item.ai_insights = item_in.ai_insights
 
     item.updated_at = _utc_now()
+    await log_activity(
+        db,
+        user_id=current_user.id,
+        action="UPDATED",
+        knowledge_id=item.id,
+        knowledge_title=item.title,
+        item_type=item.type,
+    )
     await db.commit()
 
     # Refresh
@@ -470,6 +708,14 @@ async def delete_knowledge(
             detail="Knowledge item not found",
         )
 
+    await log_activity(
+        db,
+        user_id=current_user.id,
+        action="DELETED",
+        knowledge_id=item.id,
+        knowledge_title=item.title,
+        item_type=item.type,
+    )
     await db.delete(item)
     await db.commit()
     return None
@@ -498,6 +744,14 @@ async def toggle_favorite(
 
     item.is_favorite = not item.is_favorite
     item.updated_at = _utc_now()
+    await log_activity(
+        db,
+        user_id=current_user.id,
+        action="FAVORITED" if item.is_favorite else "UNFAVORITED",
+        knowledge_id=item.id,
+        knowledge_title=item.title,
+        item_type=item.type,
+    )
     await db.commit()
 
     return _to_knowledge_out(item)

@@ -10,6 +10,7 @@ from app.models.user import User
 from app.models.collection import Collection
 from app.models.knowledge import Knowledge
 from app.schemas.collection import CollectionCreate, CollectionUpdate, CollectionOut
+from app.services.activity_service import log_activity
 
 router = APIRouter(prefix="/collections", tags=["collections"])
 
@@ -72,6 +73,15 @@ async def create_collection(
         color=collection_in.color or "#3B82F6",
     )
     db.add(new_collection)
+    await db.flush()
+    await log_activity(
+        db,
+        user_id=current_user.id,
+        action="COLLECTION_CREATED",
+        knowledge_id=new_collection.id,
+        knowledge_title=clean_name,
+        item_type="COLLECTION",
+    )
     try:
         await db.commit()
         await db.refresh(new_collection)

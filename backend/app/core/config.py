@@ -35,8 +35,11 @@ class Settings(BaseSettings):
     MAX_UPLOAD_SIZE_BYTES: int = 50 * 1024 * 1024 # 50 MB
 
     # AI Provider
-    AI_PROVIDER: str = "mock"
+    AI_PROVIDER: str = "gemini" # "gemini" or "mock"
     AI_API_KEY: str = ""
+    GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-1.5-flash"
+    GEMINI_API_URL: str = "https://generativelanguage.googleapis.com/v1beta/models"
 
     model_config = SettingsConfigDict(
         env_file=".env",

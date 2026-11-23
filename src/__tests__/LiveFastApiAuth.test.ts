@@ -3,15 +3,17 @@
  */
 
 import { AuthService } from '@/services/api/auth';
-import { apiClient, getStoredToken, removeStoredToken, setStoredToken } from '@/services/api/client';
+import { apiClient, getStoredToken } from '@/services/api/client';
 
 // Mock localStorage in Node test environment
 const mockStorage: Record<string, string> = {};
-(global as any).localStorage = {
+(global as unknown as { localStorage: Storage }).localStorage = {
   getItem: (key: string) => mockStorage[key] || null,
   setItem: (key: string, val: string) => { mockStorage[key] = val; },
   removeItem: (key: string) => { delete mockStorage[key]; },
   clear: () => { Object.keys(mockStorage).forEach(k => delete mockStorage[k]); },
+  key: () => null,
+  length: 0,
 };
 
 describe('Live FastAPI Integration Test against http://127.0.0.1:8000', () => {

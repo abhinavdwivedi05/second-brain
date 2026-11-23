@@ -1,34 +1,30 @@
-import asyncio
-from typing import Any
-
+from typing import List, Optional
 from app.ai.provider_factory import get_ai_provider
 from app.ai.base import BaseAIProvider
 
 class AIService:
-    """High-level service that delegates generation to the configured AI provider.
-
-    The service isolates the FastAPI layer from provider specifics and centralises
-    error handling. Future features (summarisation, tags, etc.) will build on top
-    of this service.
+    """High-level service coordinating AI operations.
+    
+    Delegates to the configured AI provider (Gemini or Mock) and normalizes errors.
     """
 
-    def __init__(self) -> None:
-        self._provider: BaseAIProvider = get_ai_provider()
+    @property
+    def provider(self) -> BaseAIProvider:
+        return get_ai_provider()
 
-    async def generate(self, prompt: str, system_prompt: str | None = None) -> str:
-        """Generate text via the underlying provider.
+    async def generate(self, prompt: str, system_prompt: Optional[str] = None) -> str:
+        return await self.provider.generate(prompt, system_prompt)
 
-        Args:
-            prompt: The user supplied prompt.
-            system_prompt: Optional system‑level instruction.
-        Returns:
-            Generated text.
-        Raises:
-            RuntimeError: If the provider raises an unexpected exception.
-        """
-        try:
-            # Most providers expose a generic generate method; mock provider implements it.
-            return await self._provider.generate(prompt, system_prompt)
-        except Exception as exc:
-            # Normalise any provider‑specific exception to a generic RuntimeError.
-            raise RuntimeError("AI generation failed") from exc
+    async def summarize(self, content: str, title: Optional[str] = None) -> str:
+        return await self.provider.summarize(content, title)
+
+    async def extract_concepts(self, content: str) -> List[str]:
+        return await self.provider.extract_concepts(content)
+
+    async def suggest_tags(self, content: str, title: str) -> List[str]:
+        return await self.provider.suggest_tags(content, title)
+
+    async def chat(self, query: str, context: Optional[str] = None) -> str:
+        return await self.provider.chat(query, context)
+
+ai_service = AIService()

@@ -1,26 +1,20 @@
 'use client';
 
 import React from 'react';
-import { useKnowledge, ViewMode } from '@/context/KnowledgeContext';
+import { useKnowledge } from '@/context/KnowledgeContext';
 import { KnowledgeType, KnowledgeItem } from '@/types';
 import {
   Search,
   LayoutGrid,
   List,
   AlignJustify,
-  Filter,
   Star,
   Plus,
   ArrowUpDown,
-  Tag as TagIcon,
-  FolderKanban,
   FileText,
   Link2,
   FileCode,
-  Image,
-  FileAudio,
   ChevronRight,
-  ExternalLink,
 } from 'lucide-react';
 import { TypeIcon } from '@/components/ui/TypeIcon';
 import { Badge } from '@/components/ui/Badge';
@@ -34,17 +28,9 @@ export const KnowledgeLibrary: React.FC = () => {
     resetFilters,
     viewMode,
     setViewMode,
-    openDetailView,
-    toggleFavorite,
     setIsAddModalOpen,
     collections,
-    tags,
-    isLoading,
   } = useKnowledge();
-
-  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFilterOptions((prev) => ({ ...prev, query: e.target.value }));
-  };
 
   const handleTypeSelect = (type: KnowledgeType | 'ALL') => {
     setFilterOptions((prev) => ({ ...prev, type, favoritesOnly: false }));
@@ -56,7 +42,6 @@ export const KnowledgeLibrary: React.FC = () => {
     { key: 'LINK', label: 'Links', icon: <Link2 size={14} /> },
     { key: 'PDF', label: 'PDFs', icon: <FileCode size={14} /> },
     { key: 'DOCUMENT', label: 'Docs', icon: <FileText size={14} /> },
-    { key: 'AUDIO', label: 'Audio', icon: <FileAudio size={14} /> },
   ];
 
   return (
@@ -106,7 +91,7 @@ export const KnowledgeLibrary: React.FC = () => {
               onChange={(e) =>
                 setFilterOptions((prev) => ({
                   ...prev,
-                  sortBy: e.target.value as any,
+                  sortBy: e.target.value as 'newest' | 'oldest' | 'recently_accessed' | 'title',
                 }))
               }
               className="text-xs font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700/80 rounded-lg px-2.5 py-1.5 pr-6 focus:outline-none cursor-pointer appearance-none"
@@ -162,7 +147,7 @@ export const KnowledgeLibrary: React.FC = () => {
 
           {filterOptions.query && (
             <Badge variant="accent" size="sm">
-              Search: "{filterOptions.query}"
+              Search: &quot;{filterOptions.query}&quot;
             </Badge>
           )}
 
@@ -198,7 +183,7 @@ export const KnowledgeLibrary: React.FC = () => {
               No knowledge found
             </h3>
             <p className="text-xs text-zinc-500 dark:text-zinc-400">
-              We couldn't find any knowledge entries matching your active filters.
+              We couldn&apos;t find any knowledge entries matching your active filters.
             </p>
           </div>
           <div className="flex justify-center gap-3 pt-2">

@@ -5,9 +5,6 @@ import { CommandPalette } from '@/components/search/CommandPalette';
 import { KnowledgeProvider } from '@/context/KnowledgeContext';
 import { ThemeProvider } from '@/context/ThemeContext';
 // Mock KnowledgeService
-// @ts-ignore
-// Mock KnowledgeService
-// @ts-ignore
 jest.mock('@/services/api/knowledge', () => ({
   KnowledgeService: {
     getAll: jest.fn().mockResolvedValue([]),
@@ -18,7 +15,7 @@ jest.mock('@/services/api/knowledge', () => ({
       pageSize: 20,
       totalPages: 0,
       total: 0,
-    } as any),
+    }),
     toggleFavorite: jest.fn().mockResolvedValue(null),
     create: jest.fn().mockResolvedValue({
       id: 'k-1',
@@ -33,14 +30,13 @@ jest.mock('@/services/api/knowledge', () => ({
       relatedKnowledgeIds: [],
       keyConcepts: [],
       isFavorite: false,
-    } as any),
+    }),
     update: jest.fn().mockResolvedValue(null),
     delete: jest.fn().mockResolvedValue(true),
   },
 }));
 
 // Mock CollectionService
-// @ts-ignore
 jest.mock('@/services/api/collections', () => ({
   CollectionService: {
     getAll: jest.fn().mockResolvedValue([]),
@@ -50,7 +46,6 @@ jest.mock('@/services/api/collections', () => ({
 }));
 
 // Mock TagService
-// @ts-ignore
 jest.mock('@/services/api/tags', () => ({
   TagService: {
     getAll: jest.fn().mockResolvedValue([]),

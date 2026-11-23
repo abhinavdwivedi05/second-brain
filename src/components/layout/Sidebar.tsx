@@ -1,8 +1,7 @@
 'use client';
 
 import React, { useContext } from 'react';
-import { useKnowledge, ActiveView } from '@/context/KnowledgeContext';
-import { useTheme } from '@/context/ThemeContext';
+import { useKnowledge } from '@/context/KnowledgeContext';
 import { AuthContext } from '@/context/AuthContext';
 import { KnowledgeType } from '@/types';
 import {
@@ -14,17 +13,13 @@ import {
   Link2,
   FileCode,
   Image,
-  FileAudio,
   FolderKanban,
   Tags,
   Star,
-  Clock,
   Sparkles,
   Settings,
   ChevronLeft,
   ChevronRight,
-  Sun,
-  Moon,
   Compass,
   HardDrive,
   LogOut,
@@ -35,6 +30,7 @@ export const Sidebar: React.FC = () => {
   const {
     activeView,
     setActiveView,
+    setActiveItem,
     knowledgeItems,
     collections,
     tags,
@@ -45,9 +41,10 @@ export const Sidebar: React.FC = () => {
     setIsSidebarCollapsed,
     selectTypeFilter,
     resetFilters,
+    filterOptions,
+    setFilterOptions,
   } = useKnowledge();
 
-  const { theme, toggleTheme } = useTheme();
   const auth = useContext(AuthContext);
 
   // Helper counts
@@ -86,10 +83,10 @@ export const Sidebar: React.FC = () => {
       count: favoriteCount,
       action: () => {
         resetFilters();
-        useKnowledge().setFilterOptions((prev) => ({ ...prev, favoritesOnly: true }));
+        setFilterOptions((prev) => ({ ...prev, favoritesOnly: true }));
         setActiveView('library');
       },
-      active: activeView === 'library' && useKnowledge().filterOptions.favoritesOnly,
+      active: activeView === 'library' && filterOptions.favoritesOnly,
     },
   ];
 
@@ -99,7 +96,6 @@ export const Sidebar: React.FC = () => {
     { type: 'PDF' as KnowledgeType, label: 'PDFs', icon: FileCode, count: countByType('PDF') },
     { type: 'DOCUMENT' as KnowledgeType, label: 'Documents', icon: FileText, count: countByType('DOCUMENT') },
     { type: 'IMAGE' as KnowledgeType, label: 'Images', icon: Image, count: countByType('IMAGE') },
-    { type: 'AUDIO' as KnowledgeType, label: 'Audio', icon: FileAudio, count: countByType('AUDIO') },
   ];
 
   const secondaryNavItems = [
@@ -108,7 +104,10 @@ export const Sidebar: React.FC = () => {
       label: 'Collections',
       icon: FolderKanban,
       count: collections.length,
-      action: () => setActiveView('collections'),
+      action: () => {
+        setActiveItem(null);
+        setActiveView('collections');
+      },
       active: activeView === 'collections',
     },
     {
@@ -116,14 +115,20 @@ export const Sidebar: React.FC = () => {
       label: 'Tags',
       icon: Tags,
       count: tags.length,
-      action: () => setActiveView('tags'),
+      action: () => {
+        setActiveItem(null);
+        setActiveView('tags');
+      },
       active: activeView === 'tags',
     },
     {
       id: 'landing',
       label: 'Product Overview',
       icon: Compass,
-      action: () => setActiveView('landing'),
+      action: () => {
+        setActiveItem(null);
+        setActiveView('landing');
+      },
       active: activeView === 'landing',
     },
   ];
@@ -134,15 +139,29 @@ export const Sidebar: React.FC = () => {
   );
 
   return (
-    <aside
-      className={`relative flex flex-col h-screen border-r border-zinc-200 dark:border-zinc-800/80 bg-zinc-50/70 dark:bg-[#0c0c0e] transition-all duration-300 z-30 select-none ${
-        isSidebarCollapsed ? 'w-16' : 'w-64'
-      }`}
-    >
+    <>
+      {/* Mobile Drawer Backdrop */}
+      {!isSidebarCollapsed && (
+        <div
+          onClick={() => setIsSidebarCollapsed(true)}
+          className="fixed inset-0 bg-black/60 z-30 md:hidden backdrop-blur-xs animate-fade-in"
+        />
+      )}
+
+      <aside
+        className={`flex flex-col h-screen border-r border-zinc-200 dark:border-zinc-800/80 bg-zinc-50 dark:bg-[#0c0c0e] transition-all duration-300 select-none ${
+          isSidebarCollapsed
+            ? 'hidden md:flex md:w-16'
+            : 'fixed inset-y-0 left-0 z-40 md:relative md:flex w-64 shadow-2xl md:shadow-none'
+        }`}
+      >
       {/* Brand Header */}
       <div className="flex items-center justify-between px-3.5 py-4 border-b border-zinc-200/60 dark:border-zinc-800/50">
         <div
-          onClick={() => setActiveView('dashboard')}
+          onClick={() => {
+            setActiveItem(null);
+            setActiveView('dashboard');
+          }}
           className="flex items-center gap-2.5 cursor-pointer group overflow-hidden"
         >
           <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600 text-white shadow-sm shadow-indigo-600/30 shrink-0 group-hover:scale-105 transition-transform">
@@ -248,8 +267,8 @@ export const Sidebar: React.FC = () => {
               const Icon = item.icon;
               const isActive =
                 activeView === 'library' &&
-                useKnowledge().filterOptions.type === item.type &&
-                !useKnowledge().filterOptions.favoritesOnly;
+                filterOptions.type === item.type &&
+                !filterOptions.favoritesOnly;
 
               return (
                 <button
@@ -356,6 +375,7 @@ export const Sidebar: React.FC = () => {
         {/* User profile & Theme toggle */}
         <div className="flex items-center justify-between pt-1">
           <div className="flex items-center gap-2 min-w-0">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={user.avatarUrl}
               alt={user.name}
@@ -379,13 +399,6 @@ export const Sidebar: React.FC = () => {
             >
               <Settings size={15} />
             </button>
-            <button
-              onClick={toggleTheme}
-              className="p-1.5 rounded-md text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-200/60 dark:hover:bg-zinc-800/60 transition-colors"
-              title={theme === 'dark' ? 'Switch to Light mode' : 'Switch to Dark mode'}
-            >
-              {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
-            </button>
             {auth?.isAuthenticated && (
               <button
                 onClick={() => auth.logout()}
@@ -399,5 +412,6 @@ export const Sidebar: React.FC = () => {
         </div>
       </div>
     </aside>
+    </>
   );
 };

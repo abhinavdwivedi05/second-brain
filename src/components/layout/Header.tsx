@@ -2,18 +2,13 @@
 
 import React from 'react';
 import { useKnowledge } from '@/context/KnowledgeContext';
-import { useTheme } from '@/context/ThemeContext';
 import {
   Search,
   Plus,
   Sparkles,
   Command,
-  Sun,
-  Moon,
   Menu,
   ChevronRight,
-  Bell,
-  CheckCircle2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 
@@ -28,8 +23,6 @@ export const Header: React.FC = () => {
     isSidebarCollapsed,
     setIsSidebarCollapsed,
   } = useKnowledge();
-
-  const { theme, toggleTheme } = useTheme();
 
   // Breadcrumb text determination
   const getBreadcrumb = () => {
@@ -126,15 +119,6 @@ export const Header: React.FC = () => {
           <span className="hidden sm:inline">Add Knowledge</span>
           <span className="sm:hidden">Add</span>
         </Button>
-
-        {/* Theme Toggle */}
-        <button
-          onClick={toggleTheme}
-          className="p-2 rounded-lg text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors ml-1"
-          title={theme === 'dark' ? 'Switch to Light mode' : 'Switch to Dark mode'}
-        >
-          {theme === 'dark' ? <Sun size={17} /> : <Moon size={17} />}
-        </button>
       </div>
     </header>
   );

@@ -5,12 +5,19 @@
 
 export const TOKEN_STORAGE_KEY = 'second_brain_token';
 
+interface GlobalStorageHolder {
+  localStorage?: Storage;
+  Headers?: typeof Headers;
+  fetch?: typeof fetch;
+}
+
 export function getStoredToken(): string | null {
   if (typeof window !== 'undefined') {
     return localStorage.getItem(TOKEN_STORAGE_KEY);
   }
-  if (typeof globalThis !== 'undefined' && (globalThis as any).localStorage) {
-    return (globalThis as any).localStorage.getItem(TOKEN_STORAGE_KEY);
+  const globalObj = globalThis as unknown as GlobalStorageHolder;
+  if (globalObj.localStorage) {
+    return globalObj.localStorage.getItem(TOKEN_STORAGE_KEY);
   }
   return null;
 }
@@ -20,8 +27,9 @@ export function setStoredToken(token: string): void {
     localStorage.setItem(TOKEN_STORAGE_KEY, token);
     return;
   }
-  if (typeof globalThis !== 'undefined' && (globalThis as any).localStorage) {
-    (globalThis as any).localStorage.setItem(TOKEN_STORAGE_KEY, token);
+  const globalObj = globalThis as unknown as GlobalStorageHolder;
+  if (globalObj.localStorage) {
+    globalObj.localStorage.setItem(TOKEN_STORAGE_KEY, token);
   }
 }
 
@@ -30,16 +38,17 @@ export function removeStoredToken(): void {
     localStorage.removeItem(TOKEN_STORAGE_KEY);
     return;
   }
-  if (typeof globalThis !== 'undefined' && (globalThis as any).localStorage) {
-    (globalThis as any).localStorage.removeItem(TOKEN_STORAGE_KEY);
+  const globalObj = globalThis as unknown as GlobalStorageHolder;
+  if (globalObj.localStorage) {
+    globalObj.localStorage.removeItem(TOKEN_STORAGE_KEY);
   }
 }
 
 export class ApiClientError extends Error {
   status: number;
-  data: any;
+  data: unknown;
 
-  constructor(message: string, status: number, data?: any) {
+  constructor(message: string, status: number, data?: unknown) {
     super(message);
     this.name = 'ApiClientError';
     this.status = status;
@@ -59,7 +68,8 @@ class ApiClient {
   }
 
   private getHeaders(customHeaders?: HeadersInit, isFormData = false): Headers {
-    const HeadersClass = typeof Headers !== 'undefined' ? Headers : (globalThis as any).Headers;
+    const globalObj = globalThis as unknown as GlobalStorageHolder;
+    const HeadersClass = typeof Headers !== 'undefined' ? Headers : (globalObj.Headers || Headers);
     const headers = new HeadersClass(customHeaders);
     if (!isFormData && !headers.has('Content-Type')) {
       headers.set('Content-Type', 'application/json');
@@ -81,11 +91,12 @@ class ApiClient {
       headers: this.getHeaders(options.headers, isFormData),
     };
 
-    const fetchFn = typeof fetch !== 'undefined' ? fetch : (globalThis as any).fetch;
+    const globalObj = globalThis as unknown as GlobalStorageHolder;
+    const fetchFn = typeof fetch !== 'undefined' ? fetch : (globalObj.fetch || fetch);
     const response = await fetchFn(url, config);
 
     if (!response.ok) {
-      let errorData: any = null;
+      let errorData: Record<string, unknown> | null = null;
       let errorMessage = `HTTP error ${response.status}: ${response.statusText}`;
 
       try {
@@ -118,30 +129,30 @@ class ApiClient {
     return this.request<T>(endpoint, { ...options, method: 'GET' });
   }
 
-  post<T>(endpoint: string, body?: any, options?: RequestInit): Promise<T> {
+  post<T>(endpoint: string, body?: unknown, options?: RequestInit): Promise<T> {
     const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
     return this.request<T>(endpoint, {
       ...options,
       method: 'POST',
-      body: isFormData ? body : (body !== undefined ? JSON.stringify(body) : undefined),
+      body: isFormData ? (body as FormData) : (body !== undefined ? JSON.stringify(body) : undefined),
     });
   }
 
-  put<T>(endpoint: string, body?: any, options?: RequestInit): Promise<T> {
+  put<T>(endpoint: string, body?: unknown, options?: RequestInit): Promise<T> {
     const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
     return this.request<T>(endpoint, {
       ...options,
       method: 'PUT',
-      body: isFormData ? body : (body !== undefined ? JSON.stringify(body) : undefined),
+      body: isFormData ? (body as FormData) : (body !== undefined ? JSON.stringify(body) : undefined),
     });
   }
 
-  patch<T>(endpoint: string, body?: any, options?: RequestInit): Promise<T> {
+  patch<T>(endpoint: string, body?: unknown, options?: RequestInit): Promise<T> {
     const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
     return this.request<T>(endpoint, {
       ...options,
       method: 'PATCH',
-      body: isFormData ? body : (body !== undefined ? JSON.stringify(body) : undefined),
+      body: isFormData ? (body as FormData) : (body !== undefined ? JSON.stringify(body) : undefined),
     });
   }
 

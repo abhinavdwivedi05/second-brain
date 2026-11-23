@@ -41,8 +41,8 @@ export const TagsView: React.FC = () => {
       await createTag({ name: clean, color: tagColor });
       setTagName('');
       setIsCreateModalOpen(false);
-    } catch (err: any) {
-      setActionError(err?.message || 'Failed to create tag');
+    } catch (err: unknown) {
+      setActionError((err as Error)?.message || 'Failed to create tag');
     } finally {
       setIsSubmitting(false);
     }
@@ -66,8 +66,8 @@ export const TagsView: React.FC = () => {
     try {
       await updateTag(editingTag.id, { name: clean, color: editColor });
       setEditingTag(null);
-    } catch (err: any) {
-      setActionError(err?.message || 'Failed to update tag');
+    } catch (err: unknown) {
+      setActionError((err as Error)?.message || 'Failed to update tag');
     } finally {
       setIsSubmitting(false);
     }
@@ -78,8 +78,8 @@ export const TagsView: React.FC = () => {
     if (confirm(`Delete tag "#${t.name}"?`)) {
       try {
         await deleteTag(t.id);
-      } catch (err: any) {
-        alert(err?.message || 'Failed to delete tag');
+      } catch (err: unknown) {
+        alert((err as Error)?.message || 'Failed to delete tag');
       }
     }
   };

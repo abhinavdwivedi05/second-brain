@@ -10,6 +10,7 @@ from app.models.user import User
 from app.models.tag import Tag
 from app.models.knowledge import knowledge_tags
 from app.schemas.tag import TagCreate, TagUpdate, TagOut
+from app.services.activity_service import log_activity
 
 router = APIRouter(prefix="/tags", tags=["tags"])
 
@@ -73,6 +74,15 @@ async def create_tag(
         color=tag_in.color or "#3B82F6",
     )
     db.add(new_tag)
+    await db.flush()
+    await log_activity(
+        db,
+        user_id=current_user.id,
+        action="TAG_CREATED",
+        knowledge_id=new_tag.id,
+        knowledge_title=clean_name,
+        item_type="TAG",
+    )
     try:
         await db.commit()
         await db.refresh(new_tag)

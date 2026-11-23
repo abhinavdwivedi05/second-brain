@@ -89,3 +89,9 @@ next-env.d.ts
 .mypy_cache/
 .ruff_cache/
 *.egg-info/
+/storage/
+/uploads/
+**/storage/
+**/uploads/
+*.db
+test_second_brain.db

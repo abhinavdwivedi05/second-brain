@@ -3,7 +3,6 @@
 import React from 'react';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
-import { useKnowledge } from '@/context/KnowledgeContext';
 import { AddKnowledgeModal } from '@/components/upload/AddKnowledgeModal';
 import { CommandPalette } from '@/components/search/CommandPalette';
 import { AIAssistantDrawer } from '@/components/ai/AIAssistantDrawer';

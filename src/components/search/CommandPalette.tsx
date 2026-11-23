@@ -2,11 +2,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { useKnowledge } from '@/context/KnowledgeContext';
-import { useTheme } from '@/context/ThemeContext';
-import { Search, Plus, FileText, FolderKanban, Tags, LayoutDashboard, Sun, Moon, ArrowRight, CornerDownLeft } from 'lucide-react';
+import { Search, Plus, FolderKanban, Tags, LayoutDashboard, ArrowRight, CornerDownLeft } from 'lucide-react';
 import { TypeIcon } from '@/components/ui/TypeIcon';
 import { KnowledgeService } from '@/services/api/knowledge';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { KnowledgeItem } from '@/types';
 
 export const CommandPalette: React.FC = () => {
   const {
@@ -17,46 +17,39 @@ export const CommandPalette: React.FC = () => {
     setActiveView,
     setIsAddModalOpen,
   } = useKnowledge();
-
-  const { theme, toggleTheme } = useTheme();
   const [query, setQuery] = useState('');
-  const [selectedIndex, setSelectedIndex] = useState(0);
   // Search state
   const [searchState, setSearchState] = useState<'IDLE' | 'LOADING' | 'RESULTS' | 'EMPTY' | 'ERROR'>('IDLE');
-  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchResults, setSearchResults] = useState<KnowledgeItem[]>([]);
   const abortControllerRef = React.useRef<AbortController | null>(null);
   const debounceTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
   // Pagination (if needed)
   const [pageInfo, setPageInfo] = useState({ page: 1, pageSize: 20, totalPages: 0, total: 0 });
 
-  useEffect(() => {
-    setQuery('');
-    setSelectedIndex(0);
-  }, [isCommandPaletteOpen]);
-
-  if (!isCommandPaletteOpen) return null;
-
   // Perform debounced search when query changes
   useEffect(() => {
     if (!query.trim()) {
-      setSearchState('IDLE');
-      setSearchResults([]);
       return;
     }
-    setSearchState('LOADING');
     if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
     debounceTimeoutRef.current = setTimeout(() => {
+      setSearchState('LOADING');
       if (abortControllerRef.current) abortControllerRef.current.abort();
       const controller = new AbortController();
       abortControllerRef.current = controller;
-      KnowledgeService.searchKnowledge({ q: query.trim(), page: pageInfo.page, pageSize: pageInfo.pageSize })
+      KnowledgeService.searchKnowledge({
+        q: query.trim(),
+        page: pageInfo.page,
+        pageSize: pageInfo.pageSize,
+        signal: controller.signal,
+      })
         .then((resp) => {
           setSearchResults(resp.items);
           setPageInfo({ page: resp.page, pageSize: resp.pageSize, totalPages: resp.totalPages, total: resp.total });
           setSearchState(resp.items.length ? 'RESULTS' : 'EMPTY');
         })
         .catch((err) => {
-          if (err.name === 'AbortError') return;
+          if (err?.name === 'AbortError') return;
           console.error(err);
           setSearchState('ERROR');
         });
@@ -65,6 +58,8 @@ export const CommandPalette: React.FC = () => {
       if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
     };
   }, [query, pageInfo.page, pageInfo.pageSize]);
+
+  if (!isCommandPaletteOpen) return null;
 
   const displayItems = query.trim() ? searchResults : knowledgeItems.slice(0, 5);
 
@@ -103,15 +98,6 @@ export const CommandPalette: React.FC = () => {
       action: () => {
         setIsCommandPaletteOpen(false);
         setActiveView('tags');
-      },
-    },
-    {
-      id: 'action-theme',
-      label: `Toggle Theme (${theme === 'dark' ? 'Light' : 'Dark'})`,
-      icon: theme === 'dark' ? Sun : Moon,
-      action: () => {
-        toggleTheme();
-        setIsCommandPaletteOpen(false);
       },
     },
   ];
@@ -169,7 +155,9 @@ export const CommandPalette: React.FC = () => {
                       <h4 className="text-xs font-bold text-zinc-900 dark:text-zinc-100 group-hover:text-indigo-500 truncate">
                         {item.title}
                       </h4>
-                      <p className="text-[11px] text-zinc-400 truncate">{item.summary}</p>
+                      <p className="text-[11px] text-zinc-400 truncate">
+                        {item.snippet || item.summary || 'No summary available'}
+                      </p>
                     </div>
                   </div>
                   <CornerDownLeft size={14} className="text-zinc-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-2" />

@@ -1,56 +1,31 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect } from 'react';
 
-type Theme = 'dark' | 'light';
+type Theme = 'dark';
 
 interface ThemeContextType {
   theme: Theme;
-  toggleTheme: () => void;
-  setTheme: (theme: Theme) => void;
 }
 
 const ThemeContext = createContext<ThemeContextType>({
   theme: 'dark',
-  toggleTheme: () => {},
-  setTheme: () => {},
 });
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>('dark');
-  const [mounted, setMounted] = useState(false);
-
   useEffect(() => {
-    setMounted(true);
-    const saved = localStorage.getItem('second_brain_theme') as Theme;
-    if (saved) {
-      setThemeState(saved);
-      if (saved === 'dark') {
-        document.documentElement.classList.add('dark');
-      } else {
-        document.documentElement.classList.remove('dark');
-      }
-    } else {
-      document.documentElement.classList.add('dark');
+    // Ensure dark theme is consistently applied to root
+    document.documentElement.classList.add('dark');
+    // Clean up any stale localStorage theme key
+    try {
+      localStorage.removeItem('second_brain_theme');
+    } catch {
+      // LocalStorage unavailable in certain environments
     }
   }, []);
 
-  const setTheme = (newTheme: Theme) => {
-    setThemeState(newTheme);
-    localStorage.setItem('second_brain_theme', newTheme);
-    if (newTheme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  };
-
-  const toggleTheme = () => {
-    setTheme(theme === 'dark' ? 'light' : 'dark');
-  };
-
   return (
-    <ThemeContext.Provider value={{ theme, toggleTheme, setTheme }}>
+    <ThemeContext.Provider value={{ theme: 'dark' }}>
       {children}
     </ThemeContext.Provider>
   );

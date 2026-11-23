@@ -3,7 +3,7 @@
 import React, { useState, useContext } from 'react';
 import { useKnowledge } from '@/context/KnowledgeContext';
 import { AuthContext } from '@/context/AuthContext';
-import { Settings as SettingsIcon, User, HardDrive, Key, Database, Download, Check, RefreshCw, LogOut } from 'lucide-react';
+import { Settings as SettingsIcon, User, Database, Download, Check, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 
@@ -50,6 +50,7 @@ export const SettingsView: React.FC = () => {
 
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-center gap-4">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={user.avatarUrl}
                 alt={user.name}

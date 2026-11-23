@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from app.models.collection import Collection
     from app.models.tag import Tag
     from app.models.processing_job import ProcessingJob
+    from app.models.file import File
 
 def generate_uuid() -> str:
     return str(uuid.uuid4())
@@ -63,3 +64,4 @@ class Knowledge(Base):
     collection: Mapped[Optional["Collection"]] = relationship("Collection", back_populates="knowledge_items")
     tags: Mapped[List["Tag"]] = relationship("Tag", secondary=knowledge_tags, back_populates="knowledge_items")
     processing_jobs: Mapped[List["ProcessingJob"]] = relationship("ProcessingJob", back_populates="knowledge", cascade="all, delete-orphan")
+    files: Mapped[List["File"]] = relationship("File", back_populates="knowledge")

@@ -2,14 +2,12 @@
 
 import React, { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { useTheme } from '@/context/ThemeContext';
-import { Brain, Mail, Lock, User, AlertCircle, Sparkles, Sun, Moon, ArrowRight } from 'lucide-react';
+import { Brain, Mail, Lock, User, AlertCircle, Sparkles, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 
 export const AuthView: React.FC = () => {
   const { login, signup } = useAuth();
-  const { theme, toggleTheme } = useTheme();
 
   const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [email, setEmail] = useState('');
@@ -39,8 +37,8 @@ export const AuthView: React.FC = () => {
         }
         await signup(name.trim(), email.trim(), password);
       }
-    } catch (err: any) {
-      const msg = err?.message || 'Authentication failed. Please verify your credentials or server status.';
+    } catch (err: unknown) {
+      const msg = (err as Error)?.message || 'Authentication failed. Please verify your credentials or server status.';
       setError(msg);
     } finally {
       setLoading(false);
@@ -55,17 +53,6 @@ export const AuthView: React.FC = () => {
 
   return (
     <div className="min-h-screen w-full flex flex-col justify-center items-center p-4 bg-zinc-50 dark:bg-[#09090b] text-zinc-900 dark:text-zinc-100 transition-colors relative">
-      {/* Theme toggle in top right */}
-      <div className="absolute top-4 right-4">
-        <button
-          onClick={toggleTheme}
-          className="p-2 rounded-lg text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 hover:bg-zinc-200/60 dark:hover:bg-zinc-800/60 transition-colors"
-          title={theme === 'dark' ? 'Switch to Light mode' : 'Switch to Dark mode'}
-        >
-          {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-        </button>
-      </div>
-
       <div className="w-full max-w-md space-y-6 animate-fade-in">
         {/* Brand header */}
         <div className="text-center space-y-2">

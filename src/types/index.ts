@@ -27,6 +27,8 @@ export interface KnowledgeItem {
   relatedKnowledgeIds: string[];
   aiInsights?: string[];
   audioDuration?: string;
+  snippet?: string;
+  relevanceScore?: number;
 }
 
 export interface Collection {
@@ -60,11 +62,24 @@ export interface UserProfile {
 
 export interface ActivityLog {
   id: string;
-  action: 'CREATED' | 'UPDATED' | 'FAVORITED' | 'ACCESSED' | 'DELETED' | 'AI_PROCESSED';
+  action: string;
   knowledgeId: string;
   knowledgeTitle: string;
   timestamp: string;
-  type: KnowledgeType;
+  type: string;
+}
+
+export interface DashboardStats {
+  totalKnowledge: number;
+  totalNotes: number;
+  totalLinks: number;
+  totalDocuments: number;
+  totalCollections: number;
+  totalTags: number;
+  totalFavorites: number;
+  recentItems: KnowledgeItem[];
+  recentAccessed: KnowledgeItem[];
+  recentActivities: ActivityLog[];
 }
 
 export interface SearchFilterOptions {
@@ -90,3 +105,72 @@ export interface ProcessingStep {
   status: 'pending' | 'in_progress' | 'completed' | 'failed';
   message?: string;
 }
+
+export type FileProcessingStatus = 'uploaded' | 'processing' | 'completed' | 'failed';
+
+export interface UploadedFile {
+  id: string;
+  userId: string;
+  knowledgeId?: string;
+  originalFilename: string;
+  storedFilename: string;
+  mimeType: string;
+  sizeBytes: number;
+  filePath?: string;
+  extractedText?: string;
+  processingStatus: FileProcessingStatus;
+  processingError?: string;
+  createdAt: string;
+  updatedAt: string;
+  downloadUrl?: string;
+  fileSizeFormatted?: string;
+}
+
+export interface FileListResponse {
+  items: UploadedFile[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface ChatSource {
+  id: string;
+  title: string;
+}
+
+export interface ChatResponse {
+  answer: string;
+  sources: ChatSource[];
+}
+
+export interface SummarizeResponse {
+  summary: string;
+  knowledgeId?: string;
+  provider?: string;
+}
+
+export interface ExtractConceptsResponse {
+  keyConcepts: string[];
+  concepts?: string[];
+}
+
+export interface SuggestTagsResponse {
+  tags: string[];
+  suggestedTags?: string[];
+}
+
+export interface UrlExtractResult {
+  title: string;
+  originalUrl: string;
+  canonicalUrl?: string;
+  domain: string;
+  description?: string;
+  content: string;
+  summary: string;
+  tags: string[];
+  keyConcepts: string[];
+  wordCount: number;
+  extractionStatus: string;
+}
+
+

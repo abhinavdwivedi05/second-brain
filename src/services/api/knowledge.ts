@@ -1,4 +1,4 @@
-import { KnowledgeItem, SearchFilterOptions, SearchResponse } from '@/types';
+import { KnowledgeItem, SearchFilterOptions, SearchResponse, UrlExtractResult } from '@/types';
 import { apiClient } from './client';
 
 export interface CreateKnowledgeDto {
@@ -89,6 +89,28 @@ export async function toggleKnowledgeFavorite(id: string): Promise<KnowledgeItem
   return apiClient.post<KnowledgeItem>(`/api/v1/knowledge/${encodeURIComponent(id)}/favorite`);
 }
 
+export async function extractUrlContent(url: string): Promise<UrlExtractResult> {
+  return apiClient.post<UrlExtractResult>('/api/v1/knowledge/extract-url', { url });
+}
+
+export async function importUrlKnowledge(data: {
+  url: string;
+  collectionId?: string;
+  title?: string;
+  summary?: string;
+  content?: string;
+  tags?: string[];
+}): Promise<KnowledgeItem> {
+  return apiClient.post<KnowledgeItem>('/api/v1/knowledge/import-url', {
+    url: data.url,
+    collection_id: data.collectionId,
+    title: data.title,
+    summary: data.summary,
+    content: data.content,
+    tags: data.tags,
+  });
+}
+
 // Service class providing backwards compatibility and high-level methods
 export class KnowledgeService {
   static async getAll(options?: SearchFilterOptions): Promise<KnowledgeItem[]> {
@@ -129,23 +151,50 @@ export class KnowledgeService {
   }
 
   static async searchKnowledge(params: {
-    q: string;
+    q?: string;
+    type?: string;
+    collectionId?: string;
+    tag?: string;
+    isFavorite?: boolean;
+    sortBy?: string;
     page?: number;
     pageSize?: number;
+    signal?: AbortSignal;
   }): Promise<SearchResponse> {
-    const { q, page = 1, pageSize = 20 } = params;
-    const items = await this.getAll({ query: q });
-    const total = items.length;
-    const totalPages = Math.ceil(total / pageSize) || 1;
-    const start = (page - 1) * pageSize;
-    const paginatedItems = items.slice(start, start + pageSize);
-    return {
-      items: paginatedItems,
-      page,
-      pageSize,
-      totalPages,
-      total,
-    };
+    const {
+      q,
+      type,
+      collectionId,
+      tag,
+      isFavorite,
+      sortBy,
+      page = 1,
+      pageSize = 20,
+      signal,
+    } = params;
+
+    const queryParams = new URLSearchParams();
+    if (q && q.trim()) queryParams.set('q', q.trim());
+    if (type && type !== 'ALL') queryParams.set('type', type);
+    if (collectionId) queryParams.set('collection_id', collectionId);
+    if (tag) queryParams.set('tag', tag.replace(/^#/, '').trim());
+    if (isFavorite !== undefined) queryParams.set('is_favorite', String(isFavorite));
+    if (sortBy) queryParams.set('sort_by', sortBy);
+    queryParams.set('page', String(page));
+    queryParams.set('page_size', String(pageSize));
+
+    const queryStr = queryParams.toString();
+    const endpoint = `/api/v1/search${queryStr ? `?${queryStr}` : ''}`;
+
+    try {
+      return await apiClient.get<SearchResponse>(endpoint, { signal });
+    } catch (err: unknown) {
+      if ((err as Error)?.name === 'AbortError') {
+        throw err;
+      }
+      console.error('Search API request failed:', err);
+      throw err;
+    }
   }
 
   static async getRelatedItems(item: KnowledgeItem): Promise<KnowledgeItem[]> {
@@ -166,5 +215,20 @@ export class KnowledgeService {
     } catch {
       return [];
     }
+  }
+
+  static async extractUrl(url: string): Promise<UrlExtractResult> {
+    return extractUrlContent(url);
+  }
+
+  static async importUrl(data: {
+    url: string;
+    collectionId?: string;
+    title?: string;
+    summary?: string;
+    content?: string;
+    tags?: string[];
+  }): Promise<KnowledgeItem> {
+    return importUrlKnowledge(data);
   }
 }

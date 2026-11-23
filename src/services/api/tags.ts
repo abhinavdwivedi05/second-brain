@@ -60,7 +60,7 @@ export class TagService {
 
     try {
       return await createTag({ name: clean });
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (err instanceof ApiClientError && err.status === 409) {
         try {
           const tags = await listTags();

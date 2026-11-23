@@ -7,7 +7,7 @@ from app.ai.base import BaseAIProvider
 # Registry of provider name to class path
 _PROVIDER_REGISTRY = {
     "mock": "app.ai.mock_provider.MockAIProvider",
-    # Add other providers here, e.g., "openai": "app.ai.openai_provider.OpenAIProvider"
+    "gemini": "app.ai.gemini_provider.GeminiProvider",
 }
 
 

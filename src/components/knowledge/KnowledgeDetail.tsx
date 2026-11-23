@@ -3,7 +3,9 @@
 import React, { useState, useEffect } from 'react';
 import { useKnowledge } from '@/context/KnowledgeContext';
 import { KnowledgeItem } from '@/types';
-import { KnowledgeService } from '@/services/api/knowledge';
+import { KnowledgeService, getKnowledge } from '@/services/api/knowledge';
+import { downloadFile, listFiles } from '@/services/api/files';
+import { AIService } from '@/services/api/ai';
 import {
   ArrowLeft,
   Star,
@@ -17,23 +19,37 @@ import {
   ArchiveRestore,
   Copy,
   Check,
-  Play,
-  Pause,
   Download,
   Brain,
   Layers,
   X,
   AlertCircle,
   Save,
+  FileText,
+  Loader2,
+  CheckCircle2,
+  AlertTriangle,
+  Globe,
 } from 'lucide-react';
 import { TypeIcon } from '@/components/ui/TypeIcon';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 
+function getDomainName(urlStr?: string): string {
+  if (!urlStr) return '';
+  try {
+    const parsed = new URL(urlStr);
+    return parsed.hostname.replace(/^www\./, '');
+  } catch {
+    return urlStr;
+  }
+}
+
 export const KnowledgeDetail: React.FC = () => {
   const {
     activeItem,
+    setActiveItem,
     setActiveView,
     toggleFavorite,
     toggleArchive,
@@ -46,7 +62,11 @@ export const KnowledgeDetail: React.FC = () => {
 
   const [relatedItems, setRelatedItems] = useState<KnowledgeItem[]>([]);
   const [copied, setCopied] = useState(false);
-  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+
+  // File Download & Processing State
+  const [linkedFileId, setLinkedFileId] = useState<string | null>(null);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   // Edit Mode States
   const [isEditing, setIsEditing] = useState(false);
@@ -59,11 +79,48 @@ export const KnowledgeDetail: React.FC = () => {
   const [isSaving, setIsSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
+  // AI Operations State
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [aiActionMessage, setAiActionMessage] = useState<string | null>(null);
+  const [suggestedTagsList, setSuggestedTagsList] = useState<string[]>([]);
+
   useEffect(() => {
     if (activeItem) {
       KnowledgeService.getRelatedItems(activeItem).then(setRelatedItems);
+
+      // Check if item has a linked backend file
+      if (activeItem.type === 'PDF' || activeItem.type === 'DOCUMENT' || activeItem.fileName) {
+        listFiles({ knowledgeId: activeItem.id })
+          .then((res) => {
+            if (res.items && res.items.length > 0) {
+              setLinkedFileId(res.items[0].id);
+            }
+          })
+          .catch(() => {});
+      }
     }
   }, [activeItem]);
+
+  // Poll for document extraction completion if processing
+  useEffect(() => {
+    if (!activeItem) return;
+    if (activeItem.processingStatus !== 'PROCESSING' && activeItem.processingStatus !== 'PENDING') {
+      return;
+    }
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const fresh = await getKnowledge(activeItem.id);
+        if (fresh && (fresh.processingStatus === 'COMPLETED' || fresh.processingStatus === 'FAILED')) {
+          openDetailView(fresh);
+        }
+      } catch {
+        // Polling retry
+      }
+    }, 2500);
+
+    return () => clearInterval(pollInterval);
+  }, [activeItem, openDetailView]);
 
   // Track active item ID changes to reset editing state safely without cascading effects
   const [lastItemId, setLastItemId] = useState<string | null>(null);
@@ -71,6 +128,9 @@ export const KnowledgeDetail: React.FC = () => {
     setLastItemId(activeItem.id);
     setIsEditing(false);
     setEditError(null);
+    setDownloadError(null);
+    setAiActionMessage(null);
+    setSuggestedTagsList([]);
   }
 
   if (!activeItem) {
@@ -145,6 +205,70 @@ export const KnowledgeDetail: React.FC = () => {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const handleRegenerateSummary = async () => {
+    if (!activeItem || isAiLoading) return;
+    setIsAiLoading(true);
+    setAiActionMessage(null);
+    try {
+      const summary = await AIService.summarizeContent(
+        activeItem.content,
+        activeItem.title,
+        activeItem.id
+      );
+      await updateKnowledge(activeItem.id, { summary });
+      openDetailView({ ...activeItem, summary });
+      setAiActionMessage('Summary regenerated and saved successfully!');
+    } catch (err: unknown) {
+      setAiActionMessage(`AI error: ${(err as Error)?.message || 'Failed to generate summary'}`);
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  const handleExtractConcepts = async () => {
+    if (!activeItem || isAiLoading) return;
+    setIsAiLoading(true);
+    setAiActionMessage(null);
+    try {
+      const concepts = await AIService.extractKeyConcepts(activeItem.content, activeItem.id);
+      await updateKnowledge(activeItem.id, { keyConcepts: concepts });
+      openDetailView({ ...activeItem, keyConcepts: concepts });
+      setAiActionMessage('Key concepts extracted and saved!');
+    } catch (err: unknown) {
+      setAiActionMessage(`AI error: ${(err as Error)?.message || 'Failed to extract concepts'}`);
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  const handleSuggestTags = async () => {
+    if (!activeItem || isAiLoading) return;
+    setIsAiLoading(true);
+    setAiActionMessage(null);
+    try {
+      const tags = await AIService.generateSuggestedTags(
+        activeItem.content,
+        activeItem.title,
+        activeItem.id
+      );
+      setSuggestedTagsList(tags);
+      setAiActionMessage(`Found ${tags.length} suggested tags. Click any tag to add it.`);
+    } catch (err: unknown) {
+      setAiActionMessage(`AI error: ${(err as Error)?.message || 'Failed to suggest tags'}`);
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  const handleAddSuggestedTag = async (tag: string) => {
+    if (!activeItem) return;
+    const clean = tag.replace(/^#/, '').toLowerCase().trim();
+    if (activeItem.tags.includes(clean)) return;
+    const updatedTags = [...activeItem.tags, clean];
+    await updateKnowledge(activeItem.id, { tags: updatedTags });
+    setSuggestedTagsList((prev) => prev.filter((t) => t !== tag));
+  };
+
   const handleDelete = async () => {
     if (confirm(`Are you sure you want to delete "${activeItem.title}"?`)) {
       try {
@@ -155,13 +279,40 @@ export const KnowledgeDetail: React.FC = () => {
     }
   };
 
+  const handleDownloadFile = async () => {
+    setDownloadError(null);
+    setIsDownloading(true);
+    try {
+      let fId = linkedFileId;
+      if (!fId) {
+        const fileList = await listFiles({ knowledgeId: activeItem.id });
+        if (fileList.items && fileList.items.length > 0) {
+          fId = fileList.items[0].id;
+          setLinkedFileId(fId);
+        }
+      }
+      if (!fId) {
+        throw new Error('No attached binary file found for this document.');
+      }
+      await downloadFile(fId, activeItem.fileName || `${activeItem.title}.pdf`);
+    } catch (err: unknown) {
+      console.error('Failed to download document:', err);
+      setDownloadError((err as Error)?.message || 'Failed to download document.');
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-8 animate-fade-in">
       {/* Top Navigation Bar */}
       <div className="flex items-center justify-between">
         <button
-          onClick={() => setActiveView('library')}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors"
+          onClick={() => {
+            setActiveItem(null);
+            setActiveView('library');
+          }}
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors cursor-pointer"
         >
           <ArrowLeft size={16} /> Back to Knowledge Base
         </button>
@@ -410,6 +561,69 @@ export const KnowledgeDetail: React.FC = () => {
               />
             )}
 
+            {!isEditing && (
+              <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-indigo-100 dark:border-indigo-900/40">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleRegenerateSummary}
+                  isLoading={isAiLoading}
+                  className="text-xs text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100/50"
+                  leftIcon={<Sparkles size={12} />}
+                >
+                  Regenerate Summary
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleExtractConcepts}
+                  isLoading={isAiLoading}
+                  className="text-xs text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100/50"
+                  leftIcon={<Brain size={12} />}
+                >
+                  Extract Concepts
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleSuggestTags}
+                  isLoading={isAiLoading}
+                  className="text-xs text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100/50"
+                  leftIcon={<TagIcon size={12} />}
+                >
+                  Suggest Tags
+                </Button>
+              </div>
+            )}
+
+            {suggestedTagsList.length > 0 && (
+              <div className="p-3 rounded-lg bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 text-xs space-y-1.5">
+                <div className="font-semibold text-indigo-900 dark:text-indigo-200 flex items-center justify-between">
+                  <span>AI Suggested Tags (click to add):</span>
+                  <button onClick={() => setSuggestedTagsList([])} className="text-zinc-400 hover:text-zinc-600">
+                    <X size={13} />
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {suggestedTagsList.map((tag) => (
+                    <button
+                      key={tag}
+                      onClick={() => handleAddSuggestedTag(tag)}
+                      className="px-2 py-0.5 rounded-md bg-white dark:bg-zinc-800 border border-indigo-200 dark:border-indigo-700 text-indigo-600 dark:text-indigo-300 text-[11px] font-medium hover:bg-indigo-600 hover:text-white transition-colors"
+                    >
+                      + #{tag}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {aiActionMessage && (
+              <div className="text-[11px] text-indigo-600 dark:text-indigo-400 font-medium animate-fade-in">
+                {aiActionMessage}
+              </div>
+            )}
+
             {activeItem.keyConcepts && activeItem.keyConcepts.length > 0 && !isEditing && (
               <div className="pt-3 border-t border-indigo-100 dark:border-indigo-900/40 space-y-2">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
@@ -430,28 +644,97 @@ export const KnowledgeDetail: React.FC = () => {
             )}
           </div>
 
-          {/* Audio Player Simulator */}
-          {activeItem.type === 'AUDIO' && (
-            <div className="p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#121215] flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setIsPlayingAudio(!isPlayingAudio)}
-                  className="w-10 h-10 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-md hover:scale-105 transition-transform"
-                >
-                  {isPlayingAudio ? <Pause size={18} /> : <Play size={18} className="ml-0.5" />}
-                </button>
-                <div>
-                  <div className="text-xs font-bold text-zinc-900 dark:text-zinc-100">
-                    Voice Note Audio Playback ({activeItem.audioDuration || '02:30'})
+          {/* Web Article Source Card */}
+          {(activeItem.type === 'LINK' || activeItem.originalUrl) && (
+            <div className="p-4 rounded-xl border border-indigo-200/80 dark:border-indigo-800/50 bg-gradient-to-r from-indigo-50/50 via-white to-white dark:from-indigo-950/20 dark:via-[#121215] dark:to-[#121215] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xs">
+              <div className="flex items-center gap-3.5 min-w-0">
+                <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 bg-indigo-500/10 text-indigo-500 dark:bg-indigo-950/40">
+                  <Globe size={22} />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2 truncate">
+                    <span>{getDomainName(activeItem.originalUrl) || 'Web Article'}</span>
+                    <Badge variant="accent" size="sm">Web Article</Badge>
                   </div>
-                  <div className="text-[11px] text-zinc-400">
-                    {isPlayingAudio ? 'Playing audio recording...' : 'Click play to listen to recording'}
+                  <div className="flex items-center gap-2 pt-0.5 text-[11px] text-zinc-400 truncate">
+                    <span className="truncate max-w-xs sm:max-w-md" title={activeItem.originalUrl}>
+                      {activeItem.originalUrl}
+                    </span>
                   </div>
                 </div>
               </div>
-              <Button variant="ghost" size="sm" leftIcon={<Download size={14} />}>
-                Download Audio
-              </Button>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0">
+                <a
+                  href={activeItem.originalUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-xs transition-colors"
+                >
+                  Visit Source Webpage <ExternalLink size={13} />
+                </a>
+              </div>
+            </div>
+          )}
+
+          {/* Document File Attachment Card */}
+          {(activeItem.type === 'PDF' || activeItem.type === 'DOCUMENT' || activeItem.fileName) && (
+            <div className="p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#121215] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
+              <div className="flex items-center gap-3.5">
+                <div
+                  className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${
+                    activeItem.type === 'PDF' || (activeItem.fileName && activeItem.fileName.toLowerCase().endsWith('.pdf'))
+                      ? 'bg-rose-500/10 text-rose-500 dark:bg-rose-950/40'
+                      : 'bg-blue-500/10 text-blue-500 dark:bg-blue-950/40'
+                  }`}
+                >
+                  <FileText size={22} />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                    <span>{activeItem.fileName || activeItem.title}</span>
+                    {activeItem.fileSize && (
+                      <span className="text-[11px] font-normal text-zinc-400">({activeItem.fileSize})</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 pt-1 text-[11px]">
+                    {activeItem.processingStatus === 'COMPLETED' ? (
+                      <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
+                        <CheckCircle2 size={13} /> Text Extracted
+                      </span>
+                    ) : activeItem.processingStatus === 'FAILED' ? (
+                      <span className="text-rose-600 dark:text-rose-400 font-semibold flex items-center gap-1">
+                        <AlertTriangle size={13} /> Extraction Failed
+                      </span>
+                    ) : (
+                      <span className="text-indigo-600 dark:text-indigo-400 font-semibold flex items-center gap-1.5 animate-pulse">
+                        <Loader2 size={13} className="animate-spin" /> Ingestion & Text Extraction...
+                      </span>
+                    )}
+                    <span className="text-zinc-300 dark:text-zinc-700">•</span>
+                    <span className="text-zinc-500">PostgreSQL Persistent File</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleDownloadFile}
+                  isLoading={isDownloading}
+                  leftIcon={<Download size={14} />}
+                >
+                  Download Original
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {downloadError && (
+            <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 flex items-center gap-2 text-xs text-red-700 dark:text-red-300">
+              <AlertCircle size={15} className="shrink-0" />
+              <span>{downloadError}</span>
             </div>
           )}
 
@@ -540,16 +823,24 @@ export const KnowledgeDetail: React.FC = () => {
               )}
 
               {activeItem.originalUrl && (
-                <div className="pt-2">
-                  <a
-                    href={activeItem.originalUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
-                  >
-                    Open Source Link <ExternalLink size={12} />
-                  </a>
-                </div>
+                <>
+                  <div className="flex items-center justify-between">
+                    <span className="text-zinc-400">Website Domain</span>
+                    <span className="font-medium text-zinc-700 dark:text-zinc-300">
+                      {getDomainName(activeItem.originalUrl)}
+                    </span>
+                  </div>
+                  <div className="pt-2">
+                    <a
+                      href={activeItem.originalUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                    >
+                      Open Source Link <ExternalLink size={12} />
+                    </a>
+                  </div>
+                </>
               )}
             </div>
           </div>
