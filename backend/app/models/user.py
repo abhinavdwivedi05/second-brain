@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from app.models.collection import Collection
     from app.models.tag import Tag
     from app.models.activity import Activity
+    from app.models.chunk import KnowledgeChunk
 
 def generate_uuid() -> str:
     return str(uuid.uuid4())
@@ -39,3 +40,4 @@ class User(Base):
     tags: Mapped[List["Tag"]] = relationship("Tag", back_populates="user", cascade="all, delete-orphan")
     activities: Mapped[List["Activity"]] = relationship("Activity", back_populates="user", cascade="all, delete-orphan")
     files: Mapped[List["File"]] = relationship("File", back_populates="user", cascade="all, delete-orphan")
+    chunks: Mapped[List["KnowledgeChunk"]] = relationship("KnowledgeChunk", back_populates="user", cascade="all, delete-orphan")

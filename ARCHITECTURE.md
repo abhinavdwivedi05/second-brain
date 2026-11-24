@@ -147,25 +147,72 @@ sequenceDiagram
     participant User as Client
     participant Drawer as AIAssistantDrawer
     participant API as /api/v1/ai/chat
-    participant DB as PostgreSQL
-    participant Provider as AI Provider (Mock / Gemini)
+    participant RAG as RetrievalService
+    participant Provider as AI Provider (Gemini / Mock)
+    participant DB as PostgreSQL 16 (pgvector + FTS)
 
-    Note over User,Drawer: Case 1: Single Document Context Mode
-    User->>Drawer: Ask "What is PostgreSQL?" (activeItem: Tutorial)
-    Drawer->>API: POST /ai/chat { query, knowledge_id: "tutorial-id" }
-    API->>DB: SELECT * FROM knowledge WHERE id = "tutorial-id" AND user_id = current_user
-    DB-->>API: Note content
-    API->>Provider: Prompt with Single-Document Grounding
-    Provider-->>API: Answer + citation
-    API-->>Drawer: { answer, sources: [{ id: "tutorial-id", title: "Tutorial" }] }
-
-    Note over User,Drawer: Case 2: Global Knowledge Mode
-    User->>Drawer: Click "Switch to Global" -> Ask "What do I know about Docker?"
-    Drawer->>API: POST /ai/chat { query } (no knowledge_id)
-    API->>DB: Execute relevance search across user knowledge
-    DB-->>API: Matching notes (Docker note)
-    API->>Provider: Multi-document synthesis prompt
-    Provider-->>API: Synthesized answer
-    API-->>Drawer: { answer, sources: [{ id: "docker-id", title: "Docker Note" }] }
+    User->>Drawer: Submit question ("Explain MVCC in PostgreSQL")
+    Drawer->>API: POST /api/v1/ai/chat { query, knowledge_id? }
+    API->>RAG: retrieve_hybrid(query, user_id, knowledge_id?)
+    
+    par Dense Vector Search
+        RAG->>DB: Cosine distance (<=>) on knowledge_chunks.embedding
+    and Sparse Keyword Search
+        RAG->>DB: ts_rank_cd on to_tsvector(content) @@ websearch_to_tsquery(query)
+    end
+    
+    RAG->>RAG: Reciprocal Rank Fusion (RRF): score = 1/(60+r_dense) + 1/(60+r_sparse)
+    RAG-->>API: Top ranked passages with explainability metadata
+    API->>API: Wrap in UNTRUSTED REFERENCE DATA frame (Prompt Injection Defense)
+    API->>Provider: Send grounded prompt with isolated context
+    Provider-->>API: Factual answer strictly grounded in user notes
+    API-->>Drawer: { answer, sources: [...] }
+    Drawer-->>User: Render verified answer with source badges
 ```
+
+---
+
+## 5. Second Brain AI 2.0 — Enterprise Hybrid RAG Architecture
+
+Second Brain AI 2.0 upgrades the knowledge engine from basic full-document stuffing to an enterprise Retrieval-Augmented Generation (RAG) architecture powered by pgvector and PostgreSQL Full-Text Search.
+
+### A. Document Chunking & Ingestion Pipeline
+- **Boundary-Aware Chunking**: Documents are split into semantic chunks (default 500 characters, 100 character overlap) honoring paragraph, sentence, markdown heading, and page boundaries.
+- **Idempotent Ingestion**: Chunks compute SHA-256 content hashes (`content_hash`) to avoid redundant re-embedding.
+- **Dual Persistent Models**:
+  - `knowledge`: Stores document-level metadata, summary, total chunks, and indexing status (`UNINDEXED`, `INDEXED`, `FAILED`).
+  - `knowledge_chunks`: Stores isolated text passages, 768-dimensional vector embeddings, source metadata (page numbers, section headings), and content hashes.
+
+### B. Embedding Subsystem & Google Gemini Provider
+- **Model**: `gemini-embedding-001` (768 dimensions).
+- **Asymmetric Task Types**:
+  - Document chunking: `taskType: "RETRIEVAL_DOCUMENT"`.
+  - User query search: `taskType: "RETRIEVAL_QUERY"`.
+- **Dimensionality Enforcement**: Output dimensionality explicitly locked to 768 floats with finite numeric validation.
+- **Zero Silent Fallback**: In production, API errors (401/403 auth, 404 not found, 429 rate limit, timeout) raise typed exceptions (`EmbeddingAuthError`, `EmbeddingRateLimitError`) rather than silently substituting random mock vectors.
+- **Model Space Isolation**: Queries filter by `embedding_model == active_model`, preventing vector space contamination between real and mock vectors.
+
+### C. Hybrid Retrieval with Reciprocal Rank Fusion (RRF)
+To achieve state-of-the-art recall and precision across domain-specific jargon, keywords, and semantic concepts:
+1. **Dense Vector Retrieval**:
+   - Queries `knowledge_chunks` using PostgreSQL pgvector cosine distance operator `<=>`.
+   - Cosine similarity: $Score_{dense} = 1.0 - CosineDistance(q, d)$.
+   - Filtered by `user_id` and optional `knowledge_id` (single-document context mode).
+2. **Sparse Keyword Retrieval**:
+   - Uses PostgreSQL Full-Text Search via `to_tsvector('english', content)` and `websearch_to_tsquery('english', query)`.
+   - Accelerated by GIN index `ix_knowledge_chunks_fts`.
+   - Ranked using Cover Density ranking (`ts_rank_cd`).
+   - Graceful tokenized fallback when terms contain non-stemmed identifiers.
+3. **Reciprocal Rank Fusion (RRF)**:
+   - Rank fusion standard formula with $k = 60$:
+     $$RRF(d) = \sum_{m \in \{dense, sparse\}} \frac{w_m}{k + rank_m(d)}$$
+   - Chunks retrieved by both algorithms receive top precedence with transparent explainability tags (`dense_rank`, `dense_score`, `sparse_rank`, `sparse_score`, `rrf_score`).
+
+### D. Security Boundaries & Prompt Injection Defense
+- **Untrusted Reference Data Framing**: Retrieved chunk contents are wrapped in explicit boundary markers:
+  `=== RETRIEVED KNOWLEDGE (UNTRUSTED REFERENCE DATA) ===`
+- **System Instruction Hardening**: LLMs are instructed to treat retrieved content strictly as passive reference facts. Any embedded directives attempting to override instructions, roleplay, or exfiltrate prompts are neutralized.
+- **Tenant Isolation**: All vector and keyword queries enforce `user_id == current_user.id` at the database level.
+- **Context Isolation**: Single-document mode strictly confines chunk retrieval to `knowledge_id == target_id`, eliminating context bleeding between unrelated documents.
+
 

@@ -8,6 +8,7 @@ from app.ai.base import BaseAIProvider
 _PROVIDER_REGISTRY = {
     "mock": "app.ai.mock_provider.MockAIProvider",
     "gemini": "app.ai.gemini_provider.GeminiProvider",
+    "ollama": "app.ai.ollama_provider.OllamaProvider",
 }
 
 

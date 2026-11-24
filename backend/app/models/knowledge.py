@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from app.models.tag import Tag
     from app.models.processing_job import ProcessingJob
     from app.models.file import File
+    from app.models.chunk import KnowledgeChunk
 
 def generate_uuid() -> str:
     return str(uuid.uuid4())
@@ -49,6 +50,11 @@ class Knowledge(Base):
     processing_status: Mapped[str] = mapped_column(String(30), default="COMPLETED", nullable=False, index=True) # PENDING, PROCESSING, COMPLETED, FAILED
     processing_progress: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
     processing_step: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+
+    # RAG Indexing Fields
+    indexing_status: Mapped[str] = mapped_column(String(30), default="UNINDEXED", nullable=False, index=True) # UNINDEXED, PENDING, INDEXING, INDEXED, FAILED
+    chunk_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    indexed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     
     key_concepts: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
     related_knowledge_ids: Mapped[list] = mapped_column(JSON, default=list, nullable=False)
@@ -65,3 +71,4 @@ class Knowledge(Base):
     tags: Mapped[List["Tag"]] = relationship("Tag", secondary=knowledge_tags, back_populates="knowledge_items")
     processing_jobs: Mapped[List["ProcessingJob"]] = relationship("ProcessingJob", back_populates="knowledge", cascade="all, delete-orphan")
     files: Mapped[List["File"]] = relationship("File", back_populates="knowledge")
+    chunks: Mapped[List["KnowledgeChunk"]] = relationship("KnowledgeChunk", back_populates="knowledge", cascade="all, delete-orphan")

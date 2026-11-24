@@ -34,15 +34,33 @@ class Settings(BaseSettings):
     STORAGE_DIR: str = "storage"
     MAX_UPLOAD_SIZE_BYTES: int = 50 * 1024 * 1024 # 50 MB
 
-    # AI Provider
-    AI_PROVIDER: str = "gemini" # "gemini" or "mock"
+    # AI Generation Provider (independent from EMBEDDING_PROVIDER)
+    AI_PROVIDER: str = "ollama" # "ollama", "mock", or "gemini"
+    OLLAMA_BASE_URL: str = "http://127.0.0.1:11434"
+    OLLAMA_MODEL: str = "llama3.2:1b"
     AI_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-1.5-flash"
     GEMINI_API_URL: str = "https://generativelanguage.googleapis.com/v1beta/models"
 
+    # RAG, Embedding & Vector Settings
+    EMBEDDING_PROVIDER: str = "local" # "local", "gemini", "vertex", or "mock"
+    GEMINI_EMBEDDING_MODEL: str = "gemini-embedding-001"
+    LOCAL_EMBEDDING_MODEL: str = "intfloat/multilingual-e5-base"
+    LOCAL_EMBEDDING_DEVICE: str = "cpu"
+    EMBEDDING_DIMENSION: int = 768
+    EMBEDDING_DIMENSIONS: int = 768
+    CHUNK_SIZE: int = 800
+    CHUNK_OVERLAP: int = 120
+
+    # Vertex AI Settings (when EMBEDDING_PROVIDER="vertex")
+    VERTEX_PROJECT_ID: str = ""
+    VERTEX_LOCATION: str = "us-central1"
+    VERTEX_ACCESS_TOKEN: str = ""
+    VERTEX_EMBEDDING_MODEL: str = "text-embedding-004"
+
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(".env", "backend/.env"),
         env_file_encoding="utf-8",
         case_sensitive=True,
         extra="ignore"

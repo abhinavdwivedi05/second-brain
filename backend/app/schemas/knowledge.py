@@ -53,6 +53,7 @@ class KnowledgeUpdate(BaseModel):
     related_knowledge_ids: Optional[List[str]] = None
     ai_insights: Optional[List[str]] = None
     audio_duration: Optional[str] = None
+    indexing_status: Optional[str] = None
 
     model_config = ConfigDict(
         alias_generator=_to_camel,
@@ -85,6 +86,9 @@ class KnowledgeOut(BaseModel):
     related_knowledge_ids: List[str] = Field(default_factory=list)
     ai_insights: Optional[List[str]] = Field(default_factory=list)
     audio_duration: Optional[str] = None
+    indexing_status: Optional[str] = "UNINDEXED"
+    chunk_count: Optional[int] = 0
+    indexed_at: Optional[datetime | str] = None
 
     model_config = ConfigDict(
         from_attributes=True,

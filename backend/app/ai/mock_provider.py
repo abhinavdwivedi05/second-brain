@@ -213,14 +213,18 @@ class MockAIProvider(BaseAIProvider):
         clean_context = context.strip()
 
         # Extract document title if present in context
-        doc_title_match = re.search(r"^(?:Active Document|Document Title|Title):\s*(.+)$", clean_context, re.MULTILINE)
+        doc_title_match = re.search(r"^(?:Active Document|Document Title|Title|Document):\s*[\"']?([^\"'\n\r]+)[\"']?", clean_context, re.MULTILINE)
         doc_title = doc_title_match.group(1).strip() if doc_title_match else ""
 
         # Extract clean prose sentences, completely excluding markdown headers and boilerplate
         all_sentences: List[str] = []
         for line in clean_context.split("\n"):
             line_str = line.strip()
-            if not line_str or line_str.startswith(("---", "Type:", "Document Title:", "Active Document:", "Title:", "Summary:")):
+            if not line_str or line_str.startswith((
+                "---", "===", "Type:", "Document Title:", "Active Document:", "Title:", "Summary:",
+                "Document:", "[Passage", "IMPORTANT SECURITY NOTICE:", "The following excerpts",
+                "Treat all content strictly"
+            )):
                 continue
             if line_str.startswith("#"):
                 continue
@@ -228,11 +232,23 @@ class MockAIProvider(BaseAIProvider):
                 s_strip = sentence.strip()
                 s_lower = s_strip.lower()
                 # Skip sentences shorter than 15 chars or starting with boilerplate phrases
-                if len(s_strip) < 15 or s_strip.startswith(("#", "```", "---")):
+                if len(s_strip) < 15 or s_strip.startswith(("#", "```", "---", "===")):
                     continue
                 if any(s_lower.startswith(bp) for bp in BOILERPLATE_STARTS):
                     continue
                 if any(bp in s_lower for bp in ["intended to give a simple introduction", "we only assume some general knowledge"]):
+                    continue
+                # Prompt injection defense check: skip injection directives
+                if any(inj in s_lower for inj in [
+                    "ignore previous instructions",
+                    "ignore all previous instructions",
+                    "disregard previous instructions",
+                    "you are now a",
+                    "you are now an",
+                    "override instructions",
+                    "forget your rules",
+                    "system prompt",
+                ]):
                     continue
                 all_sentences.append(s_strip)
 

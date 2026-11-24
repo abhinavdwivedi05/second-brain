@@ -39,6 +39,9 @@ Modern professionals and researchers interact with fragmented information across
 - **Web Clipper**: Intelligent URL capture with SSRF defense (localhost/private IP filtering, DNS rebinding prevention), content sanitization, automatic summary generation, and tag suggestions.
 - **Intelligent Search**: Weighted relevance ranking (`title` weight 10, `summary` weight 5, `content` weight 2) with multi-criteria filters.
 - **AI Knowledge Assistant**: Summarization, concept extraction, tag suggestions, and dual-mode conversational chat with cited sources.
+- **Enterprise Hybrid RAG (AI 2.0)**: Sub-second dense vector similarity (PostgreSQL pgvector) fused with sparse keyword search (Cover Density FTS) via Reciprocal Rank Fusion (RRF).
+- **Google Gemini Embeddings**: Live `gemini-embedding-001` integration with 768 dimensions and distinct task types (`RETRIEVAL_DOCUMENT` vs `RETRIEVAL_QUERY`).
+- **Prompt Injection Defense**: Untrusted data framing on retrieved passages to block adversarial override attacks.
 - **Dashboard & Activity Engine**: Live PostgreSQL counters for all resources, recent additions, and persistent activity audit logs.
 
 ---
@@ -237,6 +240,19 @@ erDiagram
 - **Single Document Context Mode**: When a user inspects a specific document in the detail view, queries send `knowledge_id: item.id`. The backend restricts context strictly to that document, filters boilerplate introductory phrases, and cites only that document.
 - **Global Knowledge Mode**: When querying without an active document context, the backend performs multi-term PostgreSQL search retrieval to ground the response across all saved notes and documents.
 - **Negative Answer Grounding**: If the knowledge base does not contain information addressing the query, the AI provider explicitly states this honest limitation and clears source references (`sources = []`), preventing misleading citations.
+
+### Hybrid RAG & Embedding Architecture (Second Brain AI 2.0)
+- **Dense Vector Retrieval**: Uses PostgreSQL `pgvector 0.8.0` with cosine distance (`<=>`).
+- **Google Gemini Embeddings**: Live `gemini-embedding-001` generates 768-dimensional normalized vectors with task types `RETRIEVAL_DOCUMENT` (for document chunk ingestion) and `RETRIEVAL_QUERY` (for user search queries).
+- **Sparse Keyword Retrieval**: PostgreSQL Full-Text Search with `to_tsvector('english', content)`, `websearch_to_tsquery('english', query)`, Cover Density ranking (`ts_rank_cd`), and GIN indexing (`ix_knowledge_chunks_fts`).
+- **Reciprocal Rank Fusion (RRF)**: Merges dense and sparse candidates via $RRF(d) = \sum \frac{w}{60 + rank}$.
+- **Prompt Injection Defense**: Untrusted data framing on retrieved passages to block adversarial override attacks.
+- **RAG Endpoints**:
+  - `GET /api/v1/rag/status`: Live extension, chunk, and model status.
+  - `GET /api/v1/rag/estimate`: Pre-backfill token and chunk estimates.
+  - `POST /api/v1/rag/reindex`: Backfill chunking and embedding engine.
+  - `GET /api/v1/rag/chunks/{id}`: Detailed chunk and vector inspector.
+  - `GET /api/v1/rag/retrieve`: Hybrid, dense, and sparse search explainability inspector.
 
 ### Offline / Local NLP Fallback Mode
 By default, `AI_PROVIDER=mock` executes locally using deterministic regex intent classification and sentence-level extractive summarization without network calls or external API keys. Setting `AI_PROVIDER=gemini` enables live Google Gemini 1.5 Flash generation.

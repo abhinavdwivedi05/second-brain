@@ -51,3 +51,10 @@ async def setup_test_db():
 @pytest_asyncio.fixture(autouse=True)
 async def cleanup_connections():
     yield
+
+@pytest.fixture(autouse=True)
+def configure_test_providers(monkeypatch):
+    """Ensure automated tests run with deterministic offline mock providers by default."""
+    monkeypatch.setattr("app.core.config.settings.AI_PROVIDER", "mock")
+    monkeypatch.setattr("app.core.config.settings.EMBEDDING_PROVIDER", "mock")
+

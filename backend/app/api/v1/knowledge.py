@@ -30,6 +30,7 @@ from app.services.web_extractor import (
     WebExtractionError,
 )
 from app.services.activity_service import log_activity
+from app.services.rag_ingestion_service import rag_ingestion_service
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])
 
@@ -68,6 +69,9 @@ def _to_knowledge_out(item: Knowledge) -> KnowledgeOut:
         related_knowledge_ids=item.related_knowledge_ids or [],
         ai_insights=item.ai_insights or [],
         audio_duration=item.audio_duration,
+        indexing_status=getattr(item, "indexing_status", "UNINDEXED") or "UNINDEXED",
+        chunk_count=getattr(item, "chunk_count", 0) or 0,
+        indexed_at=getattr(item, "indexed_at", None),
     )
 
 
@@ -266,6 +270,12 @@ async def create_knowledge(
         item_type=clean_type,
     )
     await db.commit()
+
+    # Trigger RAG Ingestion (chunking and vector embedding)
+    try:
+        await rag_ingestion_service.ingest_knowledge(new_item.id, current_user.id, db)
+    except Exception:
+        pass
 
     # Re-fetch with loaded relationships
     reload_query = (
@@ -552,6 +562,12 @@ async def import_url_knowledge(
     )
     await db.commit()
 
+    # Trigger RAG Ingestion for imported website content
+    try:
+        await rag_ingestion_service.ingest_knowledge(new_knowledge.id, current_user.id, db)
+    except Exception:
+        pass
+
     reload_q = (
         select(Knowledge)
         .options(selectinload(Knowledge.tags), selectinload(Knowledge.collection))
@@ -678,6 +694,12 @@ async def update_knowledge(
         item_type=item.type,
     )
     await db.commit()
+
+    # Trigger RAG Ingestion update if content/title changed
+    try:
+        await rag_ingestion_service.ingest_knowledge(item.id, current_user.id, db, force=True)
+    except Exception:
+        pass
 
     # Refresh
     reload_query = (

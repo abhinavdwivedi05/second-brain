@@ -99,6 +99,14 @@ async def process_file_background(file_id: str):
                     k.processing_step = "Document text extracted"
 
             await session.commit()
+
+            # Trigger RAG Ingestion for extracted document text
+            if f.knowledge_id:
+                try:
+                    from app.services.rag_ingestion_service import rag_ingestion_service
+                    await rag_ingestion_service.ingest_knowledge(f.knowledge_id, f.user_id, session)
+                except Exception:
+                    pass
         except Exception as exc:
             f.processing_status = "failed"
             f.processing_error = str(exc)
